@@ -1,0 +1,33 @@
+# --- API ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+websockets==13.1
+
+# --- DB / ORM ---
+sqlalchemy==2.0.35
+alembic==1.13.3
+psycopg2-binary==2.9.9
+pgvector==0.3.4
+
+# --- Task queue ---
+celery==5.4.0
+redis==5.0.8
+flower==2.0.1
+
+# --- Auth ---
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+
+# --- Config / validation ---
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+
+# --- Document / file parsing (used from Task 2.x / 6.x onward) ---
+pymupdf==1.24.11
+python-docx==1.1.2
+python-pptx==1.0.2
+pytesseract==0.3.13
+openpyxl==3.1.5
