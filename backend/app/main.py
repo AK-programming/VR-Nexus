@@ -1,15 +1,17 @@
 """
-Minimal FastAPI entrypoint. Right now it only exists so Task 1.1 can be
-verified end-to-end (env -> DB connection -> tables). Auth endpoints
-(Task 1.2), the tender workflow, and the library endpoints get added to
-this app in later tasks.
+FastAPI entrypoint. Task 1.1 added the /health check; Task 1.2 adds the
+auth router (register/login/refresh/me). Future tasks (tender workflow,
+library endpoints) will register their own routers here the same way.
 """
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from app.api.routes.auth import router as auth_router
 from app.core.database import engine
 
 app = FastAPI(title="Tender Analysis System", version="0.1.0")
+
+app.include_router(auth_router)
 
 
 @app.get("/health")
