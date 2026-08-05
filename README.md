@@ -1,2 +1,2 @@
 # VR-Nexus
-VR Nexus is an AI-powered document intelligence platform that streamlines case study retrieval, government tender analysis, and methodology document management through a unified web application.
+VR-Nexus is an AI-powered document intelligence platform that streamlines government tender analysis. It automatically searches and retrieves relevant case studies, methodology documents, and company documents based on the tender requirements. The platform then organizes all the required files into a single folder, making the entire process efficient and easy to manage through a web application.
