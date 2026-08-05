@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: vrnexus_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "1234"
+      POSTGRES_DB: tender_system
+    ports:
+      - "5432:5432"
+    volumes:
+      - vrnexus_pgdata:/var/lib/postgresql/data
+      - ./docker/init-extensions.sql:/docker-entrypoint-initdb.d/init-extensions.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tender_system"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  vrnexus_pgdata:
