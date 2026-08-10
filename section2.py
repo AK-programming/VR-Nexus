@@ -6,40 +6,7 @@ import pytesseract
 from PIL import Image
 import io
 
-
-# 1.1.4 & 1.2.4 Mock vode
-class MockTender:
-    def __init__(self, filename, user_id):
-        self.id = 999
-        self.filename = filename
-        self.uploaded_by_user_id = user_id
-        self.status = "Processing"
-
-
-def get_current_user():
-    return {"id": 1, "username": "test_manager", "role": "admin"}
-
-
-def get_db():
-    class MockSession:
-        def add(self, record): pass
-
-        def commit(self): pass
-
-        def refresh(self, record): pass
-
-    return MockSession()
-
-
 app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # 2.1.1
