@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evidence Library</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="layout">
+
+    <!-- Sidebar. Four views, each doing one thing: overview, ingest, retrieve,
+         answer. Routing is the hash, so a view is linkable and survives a
+         refresh without pulling in a router. -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">E</div>
+            <div>
+                <div class="brand-name">Evidence Library</div>
+                <div class="brand-sub">WBS Section 6</div>
+            </div>
+        </div>
+
+        <nav class="nav-group">
+            <div class="nav-label">Library</div>
+
+            <a class="nav-item" href="#/overview" data-view="overview">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/>
+                    <rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>
+                </svg>
+                Overview
+            </a>
+
+            <a class="nav-item" href="#/documents" data-view="documents">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/>
+                </svg>
+                Documents
+                <span class="nav-count" id="nav-doc-count"></span>
+            </a>
+
+            <a class="nav-item" href="#/upload" data-view="upload">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>
+                </svg>
+                Upload &amp; Train
+            </a>
+        </nav>
+
+        <nav class="nav-group">
+            <div class="nav-label">Retrieval</div>
+
+            <a class="nav-item" href="#/search" data-view="search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+                </svg>
+                Search
+            </a>
+
+            <a class="nav-item" href="#/ask" data-view="ask">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 11.5a8.4 8.4 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.4 8.4 0 01-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.4 8.4 0 013.8-.9h.5a8.5 8.5 0 018 8v.5z"/>
+                </svg>
+                Ask
+            </a>
+        </nav>
+
+        <div class="sidebar-foot">
+            <div class="health-row"><span class="dot" id="health-dot"></span><span id="health-text">Checking…</span></div>
+            <div id="health-detail" style="margin-top:4px"></div>
+        </div>
+    </aside>
+
+    <main class="content">
+        <div class="content-inner">
+
+            <!-- ============================ OVERVIEW ============================ -->
+            <div class="view hidden" id="view-overview">
+                <div class="page-head">
+                    <h1>Overview</h1>
+                    <p>Indexing status across the three evidence categories.</p>
+                </div>
+
+                <section>
+                    <div class="stat-grid" id="stat-grid"></div>
+                </section>
+
+                <section>
+                    <h2 class="section-title">By category</h2>
+                    <div class="panel"><div id="category-breakdown"></div></div>
+                </section>
+
+                <section>
+                    <h2 class="section-title">Pipeline</h2>
+                    <div class="panel">
+                        <dl class="kv" id="system-info"></dl>
+                    </div>
+                </section>
+            </div>
+
+            <!-- ============================ DOCUMENTS ============================ -->
+            <div class="view hidden" id="view-documents">
+                <div class="page-head">
+                    <h1>Documents</h1>
+                    <p>Everything uploaded to the library, by category.</p>
+                </div>
+
+                <div class="toolbar" style="margin-bottom:18px">
+                    <div class="segmented" id="doc-categories">
+                        <button data-category="case_study" class="active">Case Studies<span class="seg-count" data-count="case_study"></span></button>
+                        <button data-category="methodology">Methodology<span class="seg-count" data-count="methodology"></span></button>
+                        <button data-category="company_document">Company<span class="seg-count" data-count="company_document"></span></button>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="refresh-docs">Refresh</button>
+                </div>
+
+                <div id="doc-list"></div>
+            </div>
+
+            <!-- ========================== UPLOAD & TRAIN ========================== -->
+            <div class="view hidden" id="view-upload">
+                <div class="page-head">
+                    <h1>Upload &amp; Train</h1>
+                    <p>Files are stored on upload and indexed when you train — two steps, so a duplicate is caught before anything is parsed.</p>
+                </div>
+
+                <section>
+                    <h2 class="section-title">1 · Category</h2>
+                    <div class="segmented" id="upload-categories">
+                        <button data-category="case_study" class="active">Case Studies</button>
+                        <button data-category="methodology">Methodology</button>
+                        <button data-category="company_document">Company</button>
+                    </div>
+                </section>
+
+                <section>
+                    <h2 class="section-title">2 · Files</h2>
+                    <div class="dropzone" id="dropzone">
+                        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>
+                        </svg>
+                        <strong>Drop files here or click to browse</strong>
+                        <div class="hint">PDF, DOCX, PPTX, PNG, JPG or TIFF · up to 100 MB each</div>
+                        <input type="file" id="file-input" accept=".pdf,.docx,.pptx,.png,.jpg,.jpeg,.tiff,.tif" multiple hidden>
+                    </div>
+
+                    <div class="banner banner-warning hidden" id="duplicate-warning" style="margin-top:10px">
+                        <span>⚠</span><span id="duplicate-message"></span>
+                        <button class="close" id="dismiss-warning">×</button>
+                    </div>
+                </section>
+
+                <!-- LIB-UI-03. Blank fields are auto-filled during indexing; anything
+                     typed here wins over the parser and the model. -->
+                <section class="hidden" id="metadata-section">
+                    <h2 class="section-title">3 · Metadata <span style="text-transform:none;letter-spacing:0;font-weight:400">— optional, blanks are auto-tagged</span></h2>
+                    <div class="panel">
+                        <div class="form-grid">
+                            <div class="field"><label for="meta-title">Title</label><input type="text" id="meta-title" placeholder="Leave blank to derive from the document"></div>
+                            <div class="field"><label for="meta-client">Client</label><input type="text" id="meta-client" placeholder="e.g. ACME Corp"></div>
+                            <div class="field"><label for="meta-sector">Sector</label><input type="text" id="meta-sector" placeholder="e.g. Healthcare"></div>
+                            <div class="field"><label for="meta-service">Service line</label><input type="text" id="meta-service" placeholder="e.g. Software Development"></div>
+                            <div class="field"><label for="meta-geography">Geography</label><input type="text" id="meta-geography" placeholder="e.g. Pakistan"></div>
+                            <div class="field"><label for="meta-keywords">Keywords</label><input type="text" id="meta-keywords" placeholder="Comma-separated"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="hidden" id="queue-section">
+                    <h2 class="section-title">4 · Ready to train</h2>
+                    <div class="panel">
+                        <div id="upload-queue"></div>
+                        <div class="toolbar" style="margin-top:14px">
+                            <button id="train-btn" class="btn btn-primary" disabled>Train / Memorize</button>
+                            <button id="clear-btn" class="btn btn-secondary">Clear</button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- LIB-UI-05 -->
+                <section class="hidden" id="progress-section">
+                    <h2 class="section-title">Indexing progress</h2>
+                    <div id="job-list"></div>
+                </section>
+            </div>
+
+            <!-- ============================= SEARCH ============================= -->
+            <div class="view hidden" id="view-search">
+                <div class="page-head">
+                    <h1>Search</h1>
+                    <p>Semantic retrieval across indexed chunks, grouped by document. A document scores by its strongest passage.</p>
+                </div>
+
+                <div class="toolbar">
+                    <div class="grow"><input type="search" id="search-input" placeholder="Describe what you are looking for…"></div>
+                    <button id="search-btn" class="btn btn-primary">Search</button>
+                </div>
+
+                <div class="toolbar" style="margin-top:10px">
+                    <div class="segmented" id="search-categories">
+                        <button data-category="" class="active">All</button>
+                        <button data-category="case_study">Case Studies</button>
+                        <button data-category="methodology">Methodology</button>
+                        <button data-category="company_document">Company</button>
+                    </div>
+                </div>
+
+                <div id="search-results"></div>
+            </div>
+
+            <!-- ============================== ASK =============================== -->
+            <div class="view hidden" id="view-ask">
+                <div class="page-head">
+                    <h1>Ask</h1>
+                    <p>Answers are generated only from retrieved passages. Anything the library cannot support comes back as a refusal, not a guess.</p>
+                </div>
+
+                <div class="panel">
+                    <textarea id="ask-input" placeholder="Ask a question about the indexed documents…"></textarea>
+                    <div class="toolbar" style="margin-top:11px">
+                        <button id="ask-btn" class="btn btn-primary">Ask</button>
+                        <span style="font-size:12.5px;color:var(--text-faint)">Ctrl + Enter</span>
+                    </div>
+                    <div class="example-chips" id="ask-examples"></div>
+                </div>
+
+                <div id="ask-result"></div>
+            </div>
+
+        </div>
+    </main>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+<script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# --- Web layer --------------------------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+# Never imported directly — it is the WebSocket protocol implementation uvicorn
+# uses to serve /ws/library/{job_id}. Pinned so the progress channel does not
+# depend on whatever uvicorn[standard] happens to resolve.
+websockets==14.1
+
+# --- Config / validation ----------------------------------------------------
+pydantic==2.10.4
+pydantic-settings==2.7.0
+# Pinned explicitly rather than left to pydantic-settings: config.py sets
+# env_file=".env", and that feature is python-dotenv. Relying on it arriving as
+# someone else's transitive dependency means a pydantic-settings bump could drop
+# it and .env would stop loading silently.
+python-dotenv==1.2.2
+
+# --- Database ---------------------------------------------------------------
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+pgvector==0.3.6
+
+# --- Background jobs --------------------------------------------------------
+celery==5.4.0
+redis==5.2.1
+flower==2.0.1
+
+# --- Embeddings (local ONNX, no API key) ------------------------------------
+fastembed==0.5.1
+tiktoken==0.8.0
+
+# --- LLM fallback for parsing + auto-tagging --------------------------------
+openai==1.59.6
+
+# --- Document parsing -------------------------------------------------------
+pymupdf==1.25.1
+python-docx==1.1.2
+python-pptx==1.0.2
+# Capped by fastembed 0.5.1, which requires pillow>=10.3.0,<11.0.0.
+pillow==10.4.0
+pytesseract==0.3.13
+
+# --- Tests ------------------------------------------------------------------
+pytest==8.3.4
+# httpx is not a direct import: Starlette's TestClient is built on it.
+httpx==0.28.1

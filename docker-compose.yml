@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: evidence_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-evidence}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_env}
+      POSTGRES_DB: ${POSTGRES_DB:-evidence_library}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evidence"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: evidence_redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: evidence_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./frontend:/app/frontend
+      - storage_data:/data/storage
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      - STORAGE_DIR=/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: evidence_worker
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend/app:/app/app
+      - storage_data:/data/storage
+      - fastembed_cache:/root/.cache/fastembed
+    env_file:
+      - .env
+    environment:
+      - STORAGE_DIR=/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: evidence_flower
+    command: celery -A app.celery_app flower --port=5555
+    ports:
+      - "127.0.0.1:5555:5555"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - worker
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  storage_data:
+  fastembed_cache:

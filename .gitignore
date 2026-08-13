@@ -1,0 +1,31 @@
+# Secrets
+.env
+*.pem
+*.key
+
+# Runtime storage — uploaded documents and extracted images
+storage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Embedding model cache (when run outside Docker)
+.fastembed_cache/
+
+# Extracted planning-doc text (working files, not deliverables)
+*.txt
+!requirements.txt
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
