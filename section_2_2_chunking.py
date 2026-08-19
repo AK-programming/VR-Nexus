@@ -3,6 +3,9 @@
 import re
 import tiktoken
 
+# Loaded once at import time instead of on every chunk_text_by_tokens() call.
+_ENCODING = tiktoken.get_encoding("cl100k_base")
+
 
 def detect_section_boundaries(page_data: list) -> list:
     """Handles WBS 2.2.1: Detects sections like SPN, PDS, etc."""
@@ -25,15 +28,26 @@ def detect_section_boundaries(page_data: list) -> list:
     return page_data
 
 
-def chunk_text_by_tokens(text: str, max_tokens: int = 2000) -> list:
-    """Handles WBS 2.2.2: Splits text by strict token limits."""
-    encoding = tiktoken.get_encoding("cl100k_base")
-    tokens = encoding.encode(text)
+def chunk_text_by_tokens(text: str, max_tokens: int = 2000, overlap_tokens: int = 200) -> list:
+    """Handles WBS 2.2.2 & 2.2.3: Splits text into chunks with a 200-token sliding overlap."""
+    if not text or not text.strip():
+        return []
+
+    tokens = _ENCODING.encode(text)
+    if not tokens:
+        return []
 
     chunks = []
-    for i in range(0, len(tokens), max_tokens):
+    # Step forward by (max_tokens - overlap_tokens) to create the sliding window
+    step_size = max_tokens - overlap_tokens
+
+    # Ensure step_size is positive to avoid infinite loops
+    if step_size <= 0:
+        step_size = max_tokens
+
+    for i in range(0, len(tokens), step_size):
         chunk_tokens = tokens[i:i + max_tokens]
-        chunks.append(encoding.decode(chunk_tokens))
+        chunks.append(_ENCODING.decode(chunk_tokens))
     return chunks
 
 
