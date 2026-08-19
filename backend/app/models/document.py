@@ -13,9 +13,10 @@ extracted and kept on disk, referenced by path, rather than embedded as
 raw pixels in the row itself.
 """
 import uuid
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import ARRAY, Enum, ForeignKey, Integer, String
+from sqlalchemy import ARRAY, JSON, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,8 +38,11 @@ class Document(Base, UUIDPKMixin, TimestampMixin):
         Enum(DocumentFileType, name="document_file_type"), nullable=False
     )
 
-    # LIB-UI-06: file hash used for the pre-training duplicate check
-    file_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    # LIB-UI-06: file hash used for the pre-training duplicate check. Made
+    # unique (Section 6) so it doubles as the "already indexed, skip it" key
+    # behind incremental training (LIB-IDX-07) - every row 1.1.2 would have
+    # accepted is still accepted, this only adds a constraint on top.
+    file_hash: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, unique=True, index=True)
 
     # LIB-UI-03 / LIB-IDX-06 metadata fields (filled in by the user, or by
     # auto-tagging fallback which is built later as part of the indexing pipeline)
@@ -60,6 +64,17 @@ class Document(Base, UUIDPKMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
 
+    # --- Section 6 additions (additive on top of 1.1.2, nothing renamed) ---
+    doc_type: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+
+    # Which fields a machine filled in (vs. the uploader typing them), so a
+    # reviewer can tell auto-tagged values (LIB-IDX-06) apart from manual entry.
+    auto_tagged_fields: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # --- relationships ---
     uploaded_by_user: Mapped[Optional["User"]] = relationship(  # noqa: F821
         back_populates="uploaded_documents", foreign_keys=[uploaded_by]
@@ -70,6 +85,13 @@ class Document(Base, UUIDPKMixin, TimestampMixin):
     chunks: Mapped[list["Chunk"]] = relationship(  # noqa: F821
         back_populates="document", cascade="all, delete-orphan"
     )
+    jobs: Mapped[list["IndexJob"]] = relationship(  # noqa: F821
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+    @property
+    def is_auto_tagged(self) -> bool:
+        return bool(self.auto_tagged_fields)
 
     def __repr__(self) -> str:
         return f"<Document id={self.id} category={self.category.value} title={self.title!r}>"

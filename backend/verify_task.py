@@ -1,11 +1,11 @@
 """
 Run this AFTER `alembic upgrade head` to confirm Task 1.1 actually works
-end-to-end: connects to Postgres, confirms every table from the 6 models
+end-to-end: connects to Postgres, confirms every table from the models
 exists, then does a real insert + query + rollback so nothing is left
 behind in the database.
 
 Usage (from the backend/ folder, with the venv active):
-    python verify_task_1_1.py
+    python verify_task.py
 """
 import sys
 import uuid
@@ -22,9 +22,11 @@ EXPECTED_TABLES = {
     "document_images",
     "chunks",
     "tenders",
+    "tender_chunks",
     "requirements",
     "requirement_evidence_matches",
     "audit_logs",
+    "index_jobs",
 }
 
 
@@ -64,7 +66,12 @@ def check_round_trip() -> bool:
         db.add(document)
         db.flush()
 
-        chunk = Chunk(document_id=document.id, chunk_index=0, content="Sample chunk text.")
+        chunk = Chunk(
+            document_id=document.id,
+            chunk_index=0,
+            content="Sample chunk text.",
+            category=DocumentCategory.CASE_STUDY,
+        )
         db.add(chunk)
 
         tender = Tender(

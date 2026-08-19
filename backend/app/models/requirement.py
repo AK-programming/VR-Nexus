@@ -47,6 +47,17 @@ class Requirement(Base, UUIDPKMixin, TimestampMixin):
     evidence_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     evidence_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+        # From Task 3.1's extraction (Shaheer) - a responsibility-matrix
+    # breakdown specific to this tender's format. Field meanings should
+    # be confirmed with whoever defined the extraction schema (Shaheer) -
+    # kept as plain text here since the exact business rules for how
+    # these are assigned aren't encoded anywhere in the codebase yet.
+    responsibility: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    dpl: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    prime: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    the_t: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    joint_responsibility: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    
     status: Mapped[RequirementStatus] = mapped_column(
         Enum(RequirementStatus, name="requirement_status"),
         nullable=False,

@@ -42,6 +42,15 @@ class Tender(Base, UUIDPKMixin, TimestampMixin):
     output_folder_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     output_zip_path: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
+    # --- TRK-02: progress payload fields (Task 7.1) ---
+    # `status` above already doubles as "step label" (TRK-03's 8 stages).
+    # These add the numeric progress the WebSocket payload reports, and are
+    # also what a client reconnecting mid-run (TRK-04) reads back to resume
+    # showing the correct state instead of starting from 0%.
+    progress_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    extracted_requirements_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
     uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
@@ -54,6 +63,9 @@ class Tender(Base, UUIDPKMixin, TimestampMixin):
     )
     requirements: Mapped[list["Requirement"]] = relationship(  # noqa: F821
         back_populates="tender", cascade="all, delete-orphan"
+    )
+    tender_chunks: Mapped[list["TenderChunk"]] = relationship(  # noqa: F821
+        back_populates="tender", cascade="all, delete-orphan", order_by="TenderChunk.chunk_index"
     )
 
     def __repr__(self) -> str:

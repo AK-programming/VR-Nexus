@@ -16,18 +16,20 @@ import uuid
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import Enum, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import get_settings
 from app.models.base import Base, TimestampMixin, UUIDPKMixin
+from app.models.enums import DocumentCategory
 
 _settings = get_settings()
 
 
 class Chunk(Base, UUIDPKMixin, TimestampMixin):
     __tablename__ = "chunks"
+    __table_args__ = (UniqueConstraint("document_id", "chunk_index", name="uq_chunk_per_doc"),)
 
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
@@ -46,6 +48,15 @@ class Chunk(Base, UUIDPKMixin, TimestampMixin):
     embedding: Mapped[Optional[list[float]]] = mapped_column(
         Vector(_settings.EMBEDDING_DIM), nullable=True
     )
+
+    # --- Section 6 additions (additive on top of 1.1.3, nothing renamed) ---
+    # Denormalised from the parent Document so vector search can filter by
+    # category without a join (LIB-IDX-01 / TN-MTC-02 metadata filtering).
+    category: Mapped[DocumentCategory] = mapped_column(
+        Enum(DocumentCategory, name="document_category"), nullable=False, index=True
+    )
+    phase: Mapped[str] = mapped_column(String(255), nullable=False, default="")  # LIB-IDX-03
+    image_paths: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # LIB-IDX-02
 
     # --- relationships ---
     document: Mapped["Document"] = relationship(back_populates="chunks")  # noqa: F821

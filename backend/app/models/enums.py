@@ -46,6 +46,45 @@ class DocumentTrainingStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class JobStage(str, enum.Enum):
+    """LIB-UI-05 - per-run stages surfaced over the library progress
+    WebSocket. Separate from DocumentTrainingStatus on purpose: that column
+    says what a document *is* right now, this says where one particular
+    Train run got to. Re-training an already-indexed document starts a new
+    job at `queued` while the document itself legitimately stays INDEXED
+    until the new run finishes and replaces its chunks."""
+
+    QUEUED = "queued"
+    PARSING = "parsing"
+    TAGGING = "tagging"
+    EMBEDDING = "embedding"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+# Labels the UI displays, fixed by LIB-UI-05.
+JOB_STAGE_LABELS: dict[JobStage, str] = {
+    JobStage.QUEUED: "Queued",
+    JobStage.PARSING: "Parsing",
+    JobStage.TAGGING: "Tagging",
+    JobStage.EMBEDDING: "Generating Embeddings",
+    JobStage.COMPLETE: "Indexing Complete",
+    JobStage.FAILED: "Failed",
+}
+
+# Document-level status implied by each job stage, so the two never drift
+# apart - every place that advances a job's stage also sets the document's
+# training_status to the matching value from this table.
+JOB_STAGE_TO_DOCUMENT_STATUS: dict[JobStage, DocumentTrainingStatus] = {
+    JobStage.QUEUED: DocumentTrainingStatus.QUEUED,
+    JobStage.PARSING: DocumentTrainingStatus.PARSING,
+    JobStage.TAGGING: DocumentTrainingStatus.TAGGING,
+    JobStage.EMBEDDING: DocumentTrainingStatus.EMBEDDING,
+    JobStage.COMPLETE: DocumentTrainingStatus.INDEXED,
+    JobStage.FAILED: DocumentTrainingStatus.FAILED,
+}
+
+
 class TenderStatus(str, enum.Enum):
     """Mirrors the 8 pipeline steps from TRK-03 / the implementation plan's
     WebSocket progress payload: Parse -> Chunk -> Extract -> Merge -> Match
