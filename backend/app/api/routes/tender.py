@@ -35,6 +35,9 @@ from app.services.chunking import (
     guard_against_whole_document_ingestion,
 )
 from app.services.extraction import run_extraction
+from app.services.matching import run_matching
+from app.services.scoring import run_scoring
+from app.services.output_assembly import run_output_assembly
 from app.services.progress import publish_progress
 
 router = APIRouter(prefix="/api/tenders", tags=["tenders"])
@@ -149,14 +152,34 @@ async def upload_tender(
         db.refresh(new_tender)
         extraction_result = await run_extraction(db, new_tender)
 
-        new_tender.status = TenderStatus.MERGING  # extraction+dedup done; next real stage not yet built
+        new_tender.status = TenderStatus.MERGING  # extraction+dedup done
         db.commit()
+
+        # 3.3 — running tally vs. evaluation weighting + coverage reconciliation (Task 3)
+        scoring_result = run_scoring(db, new_tender)
         publish_progress(
             str(tender_id), TenderStatus.MERGING,
             percent=60,
-            message=f"Extraction complete: {extraction_result['created']} requirements found",
+            message=(
+                f"Extraction complete: {extraction_result['created']} requirements found, "
+                f"{extraction_result['failed_chunks']} chunk(s) need manual review — "
+                f"coverage {scoring_result['coverage_percent']}%"
+                if scoring_result["coverage_percent"] is not None
+                else f"Extraction complete: {extraction_result['created']} requirements found"
+            ),
             extracted_requirements_count=extraction_result["created"],
         )
+
+        # 4.1/4.2 — real evidence matching against the Evidence Library (Task 4)
+        db.refresh(new_tender)
+        matching_result = run_matching(db, new_tender)
+
+        # 5.1/5.2/5.3 — real output assembly: Excel tracker, folder + zip,
+        # optional summary report (Task 5). Produces a first draft package;
+        # /finalize (Task 5's output.py router) re-runs this after a sales
+        # manager reviews matches, so the delivered zip matches their choices.
+        db.refresh(new_tender)
+        assembly_result = run_output_assembly(db, new_tender)
 
     except HTTPException:
         raise
@@ -168,10 +191,13 @@ async def upload_tender(
         raise HTTPException(status_code=500, detail="Failed to process tender document.")
 
     return {
-        "message": "Extracted, chunked, and requirements identified",
+        "message": "Extracted, chunked, requirements identified, evidence matched, and output assembled",
         "tender_id": new_tender.id,
         "total_pages": len(pages),
         "total_chunks": len(chunk_results),
         "requirements_found": extraction_result["created"],
         "failed_chunks": extraction_result["failed_chunks"],
+        "evidence_matched": matching_result["matched"],
+        "evidence_missing": matching_result["missing"],
+        "output_zip_path": assembly_result["output_zip_path"],
     }

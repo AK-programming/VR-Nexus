@@ -11,11 +11,28 @@ particular caller, and can be unit-tested (9.1.2) on its own.
 """
 from dataclasses import dataclass
 
+import os
+import shutil
+
 import fitz  # PyMuPDF
 import pytesseract
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 from PIL import Image
 import io
+
+# Only override pytesseract's default lookup ("tesseract" on PATH) when a
+# specific binary is configured or when we can locate the Windows install
+# location — this keeps OCR working unmodified on the Linux/Docker targets
+# named in the Implementation Plan, where "tesseract" is already on PATH
+# via the container image, while still supporting local Windows dev boxes.
+_tesseract_override = os.getenv("TESSERACT_CMD")
+if not _tesseract_override and os.name == "nt":
+    _windows_default = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.path.isfile(_windows_default):
+        _tesseract_override = _windows_default
+if not _tesseract_override:
+    _tesseract_override = shutil.which("tesseract")
+if _tesseract_override:
+    pytesseract.pytesseract.tesseract_cmd = _tesseract_override
 
 # Pages with less real text than this are assumed to be scans and get OCR'd
 # instead (TN-ING-06). 50 chars is enough to rule out a near-blank page

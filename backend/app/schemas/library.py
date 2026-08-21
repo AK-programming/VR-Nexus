@@ -160,6 +160,19 @@ class SearchHit(BaseModel):
     similarity: float
     image_paths: list[str]
 
+    # Task 6.1's chunking pipeline always writes "" / 0 here (never NULL),
+    # but the underlying Chunk.section_name/page_number columns are
+    # nullable (Task 1.1.3), so any row written another way - a manual
+    # insert, an older migration, a future ingestion path - can still hand
+    # this None. Same normalisation ChunkOut already applies above, kept
+    # consistent rather than assuming every row came through the pipeline.
+    _norm_text = field_validator("section_name", "phase", mode="before")(_blank_if_none)
+
+    @field_validator("page_number", mode="before")
+    @classmethod
+    def _zero_if_none(cls, value):
+        return 0 if value is None else value
+
     # Set only by the /ask path: whether the generated answer cited this
     # passage. Always false for a plain /search, which does no generation.
     cited: bool = False

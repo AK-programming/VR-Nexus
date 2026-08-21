@@ -1,3 +1,4 @@
+import asyncio
 """
 Task 3.1 - Requirement Extraction (LLM-based)
 Linked requirement: TN-EXT-01
@@ -23,7 +24,7 @@ from anthropic import AsyncAnthropic
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.models.enums import TenderStatus
+from app.models.enums import EvaluationImpact, RequirementStatus, TenderStatus
 from app.models.requirement import Requirement
 from app.models.tender import Tender
 from app.models.tender_chunk import TenderChunk
@@ -47,6 +48,7 @@ class ExtractedRequirement(BaseModel):
     clause_requirement_description: str
     mandatory: str
     evaluation_impact: str
+    marks: str
     dpl: str
     prime: str
     the_t: str
@@ -62,9 +64,14 @@ class ChunkExtractionResult(BaseModel):
 _SCHEMA_STRING = json.dumps(ChunkExtractionResult.model_json_schema())
 _SYSTEM_PROMPT = (
     f"Extract requirements matching this exact schema: {_SCHEMA_STRING}. "
-    "Fields section_name, reference_number, clause_requirement_description, and "
-    "evidence_document_required are strictly mandatory. If any data is missing, insert "
-    "'N/A' or 'Unnumbered'. Do not wrap output in markdown."
+    "Fields section_name, reference_number, clause_requirement_description, "
+    "evidence_document_required, evaluation_impact, and marks are strictly "
+    "mandatory (TN-EXT-02/TN-EXT-05). evaluation_impact must be exactly one of: "
+    "pass_fail, technical, financial, compliance - pick whichever the evaluation "
+    "criteria section ties this requirement to. marks must be a plain number "
+    "(e.g. '5' or '2.5') taken from the evaluation weighting/marking scheme, or "
+    "'0' if this requirement carries no marks. If any other data is missing, "
+    "insert 'N/A' or 'Unnumbered'. Do not wrap output in markdown."
 )
 
 _FENCE_OPEN_RE = re.compile(r"^```(?:json)?\s*\n?")
@@ -95,8 +102,27 @@ def _parse_bool(value: str) -> Optional[bool]:
     return None
 
 
+def _parse_marks(value: str) -> Optional[float]:
+    """Task 3.1.2/TN-EXT-05 - marks comes back as free text like '5',
+    '2.5', or '5 marks'; pulls the first number found, since `marks` is a
+    single Numeric column feeding the 3.3 coverage tally."""
+    match = re.search(r"[-+]?\d*\.?\d+", value or "")
+    return float(match.group()) if match else None
+
+
+def _parse_evaluation_impact(value: str) -> Optional[EvaluationImpact]:
+    v = (value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    try:
+        return EvaluationImpact(v)
+    except ValueError:
+        return None
+
+
+MAX_EXTRACTION_RETRIES = 3
+
+
 async def extract_chunk(chunk: TenderChunk, index: int, total: int) -> dict:
-    max_retries = 3
+    max_retries = MAX_EXTRACTION_RETRIES
     attempt = 0
     page_range = f"{chunk.page_start}-{chunk.page_end}"
 
@@ -158,6 +184,24 @@ async def run_extraction(db: Session, tender: Tender) -> dict:
 
         if result["status"] == "failed":
             failed_chunks += 1
+            # 3.1.3: a chunk that exhausted every retry gets a placeholder
+            # Requirement row flagged for manual review instead of being
+            # silently dropped - a human still needs to check that page
+            # range, since the LLM never produced usable data for it.
+            db.add(Requirement(
+                tender_id=tender.id,
+                page_number=chunk.page_start,
+                section_name=chunk.section,
+                description=(
+                    f"Automatic extraction failed after {MAX_EXTRACTION_RETRIES} "
+                    f"retries for pages {chunk.page_start}-{chunk.page_end} "
+                    f"(chunk {chunk.chunk_index}). Needs manual review of the "
+                    "source PDF for this range."
+                ),
+                status=RequirementStatus.NEEDS_MANUAL_REVIEW,
+                needs_manual_review=True,
+                evidence_required=False,
+            ))
         else:
             for req in result["data"]:
                 req_hash = _hash_requirement(req)
@@ -172,6 +216,8 @@ async def run_extraction(db: Session, tender: Tender) -> dict:
                     clause_reference=req.reference_number,
                     description=req.clause_requirement_description,
                     is_mandatory=_parse_bool(req.mandatory),
+                    evaluation_impact=_parse_evaluation_impact(req.evaluation_impact),
+                    marks=_parse_marks(req.marks),
                     responsibility=req.responsibility,
                     dpl=req.dpl,
                     prime=req.prime,

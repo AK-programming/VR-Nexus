@@ -10,6 +10,8 @@ from sqlalchemy import text
 from app.api.routes.auth import router as auth_router
 from app.api.routes.library import router as library_router
 from app.api.routes.library_ws import router as library_ws_router
+from app.api.routes.matches import router as matches_router
+from app.api.routes.output import router as output_router
 from app.api.routes.tender import router as tender_upload_router
 from app.api.routes.tenders import router as tenders_router
 from app.api.routes.ws import router as ws_router
@@ -24,6 +26,8 @@ app.include_router(auth_router)
 app.include_router(tenders_router)
 app.include_router(ws_router)
 app.include_router(tender_upload_router)
+app.include_router(matches_router)
+app.include_router(output_router)
 app.include_router(library_router)
 app.include_router(library_ws_router)
 
