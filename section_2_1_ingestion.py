@@ -2,14 +2,14 @@
 
 import io
 
-import fitz  # PyMuPDF
+import pymupdf  # Updated from import fitz
 import pytesseract
 from PIL import Image
 
 
 def extract_pdf_pages(file_content: bytes, tender_id: int) -> list:
     """Handles WBS 2.1.2 (Text/Tables) and 2.1.3 (OCR)."""
-    doc = fitz.open(stream=file_content, filetype="pdf")
+    doc = pymupdf.open(stream=file_content, filetype="pdf")
 
     try:
         if doc.needs_pass:
@@ -31,7 +31,6 @@ def extract_pdf_pages(file_content: bytes, tender_id: int) -> list:
                             [" | ".join([str(cell) if cell else "" for cell in row]) for row in table.extract()]
                         ) + "\n"
             except Exception as exc:
-                # Don't let one malformed table on one page kill the whole tender.
                 print(f"[!] Table extraction failed on page {page_num + 1}: {exc}")
 
             full_page_content = text + "\n" + table_text
@@ -58,6 +57,4 @@ def extract_pdf_pages(file_content: bytes, tender_id: int) -> list:
 
         return page_data
     finally:
-        # Was never closed before -> leaked an open file handle / memory
-        # for every PDF processed.
         doc.close()
