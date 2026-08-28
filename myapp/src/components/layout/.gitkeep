@@ -1,0 +1,2 @@
+Page chrome: AppShell, Sidebar, PageHeader. Anything that positions a page
+rather than living inside one.

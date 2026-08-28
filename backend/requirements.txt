@@ -1,0 +1,85 @@
+# VR-Nexus — single merged backend (auth + tender pipeline + Evidence Library).
+#
+# Pins are taken from the VR-Nexus-maryam backend rather than from the earlier
+# flat prototype, because that pin set is the one this exact code has actually
+# run against. The prototype's pins were newer across the board (fastapi
+# 0.115.6, sqlalchemy 2.0.36, alembic 1.14.0, pymupdf 1.25.1, ...) but its
+# package list was a strict subset — it had no JWT, no password hashing, no
+# email validation and no anthropic client, none of which it needed because its
+# auth was a hardcoded dev stub. Mixing the newer pins into the larger package
+# set would mean shipping a combination nobody has run. Bump deliberately, with
+# the test suite, rather than as part of a file copy.
+
+# --- Web layer --------------------------------------------------------------
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+# Never imported directly — it is the WebSocket protocol implementation uvicorn
+# uses to serve /ws/library/{job_id} and /ws/tenders/{id}/progress. Pinned so
+# the progress channels do not depend on whatever uvicorn[standard] happens to
+# resolve.
+websockets==13.1
+
+# --- Database ---------------------------------------------------------------
+sqlalchemy==2.0.35
+alembic==1.13.3
+psycopg[binary]==3.2.3
+# chunks.embedding and tender_chunks.embedding are vector(768) columns. The
+# `vector` extension must exist in the database before the first migration runs
+# — see setup_database.sql (native install) or docker/init-extensions.sql.
+pgvector==0.3.4
+
+# --- Background jobs --------------------------------------------------------
+celery==5.4.0
+redis==5.0.8
+flower==2.0.1
+
+# --- Auth -------------------------------------------------------------------
+# app/core/security.py imports jose for JWT encode/decode and passlib for
+# password hashing; bcrypt is passlib's backend and is pinned explicitly because
+# passlib 1.7.4 breaks against bcrypt >= 4.1 without it.
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+
+# --- Config / validation ----------------------------------------------------
+pydantic==2.9.2
+pydantic-settings==2.5.2
+# Required by the EmailStr fields in app/schemas/auth.py — pydantic does not
+# bundle it, and without it those models raise at import.
+email-validator==2.2.0
+# Pinned explicitly rather than left to pydantic-settings: config.py sets
+# env_file=".env", and that feature is python-dotenv. Relying on it arriving as
+# someone else's transitive dependency means a pydantic-settings bump could drop
+# it and .env would stop loading silently.
+python-dotenv==1.0.1
+
+# --- Document parsing -------------------------------------------------------
+pymupdf==1.24.11
+python-docx==1.1.2
+python-pptx==1.0.2
+openpyxl==3.1.5
+# Capped by fastembed 0.5.1, which requires pillow>=10.3.0,<11.0.0.
+pillow==10.4.0
+# OCR fallback for scanned PDFs. Needs the tesseract binary on PATH, or
+# TESSERACT_CMD pointing at it — see app/services/pdf_extraction.py.
+pytesseract==0.3.13
+tiktoken==0.8.0
+
+# --- Embeddings (local ONNX, no API key) ------------------------------------
+# EMBEDDING_MODEL="BAAI/bge-base-en-v1.5" produces 768 dimensions, matching the
+# vector(768) columns. Changing the model means a migration.
+fastembed==0.5.1
+
+# --- LLM clients ------------------------------------------------------------
+# openai: optional fallback for Evidence Library parsing + auto-tagging. Inert
+# unless OPENAI_API_KEY is set (see Settings.llm_available).
+openai==1.59.6
+# anthropic: required by app/services/extraction.py for tender requirement
+# extraction. Calls the Anthropic API directly, not a third-party router.
+anthropic==0.40.0
+
+# --- Tests ------------------------------------------------------------------
+pytest==8.3.4
+# httpx is not a direct import: Starlette's TestClient is built on it.
+httpx==0.28.1

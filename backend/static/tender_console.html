@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<!--
+  Tender processing console — a small standalone debug page for the tender
+  pipeline, served at /demo/tender_console.html when backend/static exists
+  (see app/main.py).
+
+  This is not part of the React app in ../myapp. It predates the Documents
+  section and covers the one flow the React frontend does not have a page for
+  yet: uploading a tender PDF and watching /ws/tenders/{id}/progress live. Keep
+  it until that flow exists in the frontend proper.
+
+  One change from the original: API_BASE is derived from the page's own origin
+  instead of being hardcoded to http://127.0.0.1:8000. The page is served by the
+  same server it calls, so this is correct by construction and keeps working if
+  uvicorn is started on a different port. The hardcoded fallback remains for the
+  case where the file is opened straight off disk as a file:// URL.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VR-Nexus — Tender Processing Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B1220;
+    --surface: #111A2E;
+    --surface-2: #16213A;
+    --border: #223052;
+    --text: #E7ECF5;
+    --muted: #7E8AA3;
+    --amber: #E8A23D;
+    --amber-dim: #4A3A1E;
+    --green: #4CC38A;
+    --green-dim: #163826;
+    --red: #E5566D;
+    --red-dim: #3A1620;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'IBM Plex Sans', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(232,162,61,0.08), transparent),
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 100% 100%, 48px 48px, 48px 48px;
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    padding: 32px 20px 80px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  .wrap { max-width: 900px; margin: 0 auto; }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header .brand {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+  header .brand span { color: var(--amber); }
+  header .sub {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .status-pill .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+  }
+  .status-pill.live .dot { background: var(--green); box-shadow: 0 0 0 3px var(--green-dim); animation: pulse 1.6s ease-in-out infinite; }
+  .status-pill.live { color: var(--green); border-color: var(--green-dim); }
+  .status-pill.error .dot { background: var(--red); }
+  .status-pill.error { color: var(--red); border-color: var(--red-dim); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 3px var(--green-dim); }
+    50% { box-shadow: 0 0 0 6px transparent; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .card .hint {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 20px;
+  }
+
+  label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  input[type="email"], input[type="password"], input[type="text"] {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 13px;
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  input:focus, button:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 1px;
+  }
+  .row { display: flex; gap: 12px; }
+  .row > * { flex: 1; }
+
+  .file-drop {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 22px;
+    text-align: center;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .file-drop:hover { border-color: var(--amber); background: rgba(232,162,61,0.04); }
+  .file-drop.has-file { border-color: var(--green); background: rgba(76,195,138,0.05); }
+  .file-drop input { display: none; }
+  .file-drop .label { font-size: 13px; color: var(--muted); }
+  .file-drop .filename { font-family: var(--font-mono); font-size: 13px; color: var(--text); margin-top: 6px; }
+
+  button {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 14px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    background: var(--amber);
+    color: #1A1204;
+    transition: transform .1s ease, box-shadow .15s ease;
+  }
+  button:hover { box-shadow: 0 4px 20px rgba(232,162,61,0.25); transform: translateY(-1px); }
+  button:active { transform: translateY(0); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+  button.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 12px;
+    padding: 8px 14px;
+  }
+  button.ghost:hover { color: var(--text); border-color: var(--muted); box-shadow: none; }
+
+  .error-msg {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--red);
+    margin-top: -8px;
+    margin-bottom: 12px;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+
+  /* --- tracker --- */
+  .tracker-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .metric .value {
+    font-family: var(--font-display);
+    font-size: 44px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .metric .value .unit { font-size: 20px; color: var(--muted); font-weight: 500; }
+  .metric .label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .progress-track {
+    height: 6px;
+    background: var(--surface-2);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--amber), var(--green));
+    border-radius: 999px;
+    width: 0%;
+    transition: width .5s cubic-bezier(.4,0,.2,1);
+  }
+
+  .stepper { display: flex; flex-direction: column; gap: 0; margin-bottom: 8px; }
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0;
+    position: relative;
+  }
+  .step .rail {
+    position: absolute;
+    left: 11px; top: -2px; bottom: -2px;
+    width: 1.5px;
+    background: var(--border);
+    z-index: 0;
+  }
+  .step:first-child .rail { top: 50%; }
+  .step:last-child .rail { bottom: 50%; }
+  .step .node {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1;
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .step .info { flex: 1; }
+  .step .name {
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .step .detail {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.7;
+  }
+
+  .step.done .node { border-color: var(--green); background: var(--green-dim); color: var(--green); }
+  .step.done .name { color: var(--text); }
+  .step.active .node { border-color: var(--amber); background: var(--amber-dim); color: var(--amber); animation: nodepulse 1.4s ease-in-out infinite; }
+  .step.active .name { color: var(--amber); font-weight: 600; }
+  .step.failed .node { border-color: var(--red); background: var(--red-dim); color: var(--red); }
+  .step.failed .name { color: var(--red); }
+  @keyframes nodepulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(232,162,61,0.35); }
+    50% { box-shadow: 0 0 0 6px rgba(232,162,61,0); }
+  }
+
+  /* --- log --- */
+  .log-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+  }
+  .log {
+    background: #080D18;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    height: 180px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+  }
+  .log .entry { color: var(--muted); white-space: pre-wrap; word-break: break-all; }
+  .log .entry .t { color: #4C5A78; }
+  .log .entry.event { color: var(--text); }
+  .log::-webkit-scrollbar { width: 6px; }
+  .log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  footer {
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    opacity: 0.5;
+    margin-top: 40px;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="brand">VR<span>·</span>Nexus</div>
+      <div class="sub">tender processing console</div>
+    </div>
+    <div id="statusPill" class="status-pill"><span class="dot"></span><span id="statusText">disconnected</span></div>
+  </header>
+
+  <!-- LOGIN -->
+  <div id="loginCard" class="card">
+    <h2>Sign in</h2>
+    <p class="hint">Connects to your local API at <span id="apiBaseLabel" style="font-family:var(--font-mono)"></span></p>
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="you@company.com" value="">
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="••••••••">
+    <div id="loginError" class="error-msg"></div>
+    <button id="loginBtn" onclick="doLogin()">Sign in</button>
+  </div>
+
+  <!-- UPLOAD -->
+  <div id="uploadCard" class="card hidden">
+    <h2>Upload a tender</h2>
+    <p class="hint">Signed in as <span id="whoami" style="font-family:var(--font-mono);color:var(--text)"></span> — upload a PDF to start live tracking</p>
+    <div class="file-drop" id="fileDrop" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept="application/pdf" onchange="onFilePicked(this)">
+      <div class="label" id="fileDropLabel">Click to choose a PDF, or drop one here</div>
+      <div class="filename" id="fileName"></div>
+    </div>
+    <div id="uploadError" class="error-msg"></div>
+    <div class="row">
+      <button id="uploadBtn" onclick="doUpload()" disabled>Upload &amp; track</button>
+      <button class="ghost" onclick="toggleManualTrack()">Track existing tender ID instead</button>
+    </div>
+    <div id="manualTrack" class="hidden" style="margin-top:16px;">
+      <label for="manualId">Tender ID</label>
+      <input type="text" id="manualId" placeholder="e.g. f345a4fc-7477-4c6a-9d09-72b737a6f5b4">
+      <button onclick="trackExisting()">Track this tender</button>
+    </div>
+  </div>
+
+  <!-- TRACKER -->
+  <div id="trackerCard" class="card hidden">
+    <h2>Live progress</h2>
+    <p class="hint">Tender <span id="tenderIdLabel" style="font-family:var(--font-mono);color:var(--text)"></span></p>
+
+    <div class="tracker-head">
+      <div class="metric">
+        <div class="value"><span id="pctValue">0</span><span class="unit">%</span></div>
+        <div class="label">complete</div>
+      </div>
+      <div class="metric">
+        <div class="value"><span id="reqValue">0</span></div>
+        <div class="label">requirements found</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="stepValue">0<span class="unit">/9</span></div>
+        <div class="label">pipeline step</div>
+      </div>
+    </div>
+
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+
+    <div class="stepper" id="stepper"></div>
+
+    <div class="log-head">
+      <label style="margin:0">Live event feed</label>
+      <button class="ghost" onclick="simulateReconnect()">Reconnect (demo TRK-04)</button>
+    </div>
+    <div class="log" id="log">
+      <div class="empty-state">Waiting for the first update…</div>
+    </div>
+  </div>
+
+  <footer>WBS Task 7 — Progress Tracking &amp; Real-Time Feedback</footer>
+</div>
+
+<script>
+// Served from /demo on the API itself, so the page's own origin is the API
+// origin. The literal is only reached when this file is opened directly off
+// disk (file://), where location.origin is "null".
+const API_BASE = (window.location.protocol === 'http:' || window.location.protocol === 'https:')
+  ? window.location.origin
+  : 'http://127.0.0.1:8000';
+document.getElementById('apiBaseLabel').textContent = API_BASE;
+
+const STAGES = [
+  { key: "uploaded",          label: "Uploaded" },
+  { key: "parsing",           label: "Parse" },
+  { key: "chunking",          label: "Chunk" },
+  { key: "extracting",        label: "Extract" },
+  { key: "merging",           label: "Merge" },
+  { key: "matching",          label: "Match" },
+  { key: "reporting",         label: "Report" },
+  { key: "assembling_folder", label: "Assemble Folder" },
+  { key: "ready_for_review",  label: "Review" },
+];
+
+let accessToken = null;
+let currentTenderId = null;
+let socket = null;
+
+function renderStepper() {
+  const el = document.getElementById('stepper');
+  el.innerHTML = STAGES.map((s, i) => `
+    <div class="step" data-key="${s.key}">
+      <div class="rail"></div>
+      <div class="node">${i + 1}</div>
+      <div class="info">
+        <div class="name">${s.label}</div>
+        <div class="detail" data-detail></div>
+      </div>
+    </div>
+  `).join('');
+}
+renderStepper();
+
+function setStatus(mode, text) {
+  const pill = document.getElementById('statusPill');
+  pill.className = 'status-pill' + (mode ? ' ' + mode : '');
+  document.getElementById('statusText').textContent = text;
+}
+
+function showError(elId, msg) {
+  const el = document.getElementById(elId);
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function clearError(elId) {
+  document.getElementById(elId).classList.remove('show');
+}
+
+async function doLogin() {
+  clearError('loginError');
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  if (!email || !password) { showError('loginError', 'Enter both email and password.'); return; }
+
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    let data;
+    try {
+      data = await res.json();
+    } catch (e) {
+      const raw = await res.text().catch(() => '');
+      throw new Error(`Server error (${res.status}): ${raw.slice(0, 200) || 'no response body'}`);
+    }
+    if (!res.ok) throw new Error(data.detail || 'Login failed');
+
+    accessToken = data.access_token;
+    document.getElementById('whoami').textContent = data.user?.email || email;
+    document.getElementById('loginCard').classList.add('hidden');
+    document.getElementById('uploadCard').classList.remove('hidden');
+    setStatus('', 'signed in');
+  } catch (err) {
+    showError('loginError', err.message || 'Could not reach the server. Is uvicorn running?');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+
+let pickedFile = null;
+function onFilePicked(input) {
+  pickedFile = input.files[0] || null;
+  document.getElementById('fileName').textContent = pickedFile ? pickedFile.name : '';
+  document.getElementById('fileDrop').classList.toggle('has-file', !!pickedFile);
+  document.getElementById('uploadBtn').disabled = !pickedFile;
+}
+
+async function doUpload() {
+  clearError('uploadError');
+  if (!pickedFile) return;
+  const btn = document.getElementById('uploadBtn');
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  try {
+    const form = new FormData();
+    form.append('file', pickedFile);
+    const res = await fetch(`${API_BASE}/api/tenders/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+      body: form,
+    });
+    let data;
+    try {
+      data = await res.json();
+    } catch (e) {
+      const raw = await res.text().catch(() => '');
+      throw new Error(`Server error (${res.status}): ${raw.slice(0, 200) || 'no response body'}`);
+    }
+    if (!res.ok) throw new Error(data.detail || 'Upload failed');
+
+    const tenderId = data.tender_id || data.id;
+    startTracking(tenderId);
+  } catch (err) {
+    showError('uploadError', err.message || 'Upload failed.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload & track';
+  }
+}
+
+function toggleManualTrack() {
+  document.getElementById('manualTrack').classList.toggle('hidden');
+}
+function trackExisting() {
+  const id = document.getElementById('manualId').value.trim();
+  if (id) startTracking(id);
+}
+
+function startTracking(tenderId) {
+  currentTenderId = tenderId;
+  document.getElementById('uploadCard').classList.add('hidden');
+  document.getElementById('trackerCard').classList.remove('hidden');
+  document.getElementById('tenderIdLabel').textContent = tenderId;
+  document.getElementById('log').innerHTML = '';
+  connectSocket();
+}
+
+function connectSocket() {
+  if (socket) { try { socket.close(); } catch (e) {} }
+  const wsBase = API_BASE.replace(/^http/, 'ws');
+  const url = `${wsBase}/ws/tenders/${currentTenderId}/progress?token=${encodeURIComponent(accessToken)}`;
+  setStatus('', 'connecting…');
+  socket = new WebSocket(url);
+
+  socket.onopen = () => setStatus('live', 'live');
+  socket.onerror = () => setStatus('error', 'connection error');
+  socket.onclose = () => {
+    if (document.getElementById('statusText').textContent !== 'reconnecting…') {
+      setStatus('error', 'disconnected');
+    }
+  };
+  socket.onmessage = (evt) => {
+    let data;
+    try { data = JSON.parse(evt.data); } catch (e) { logLine(evt.data, true); return; }
+    applyProgress(data);
+    logLine(JSON.stringify(data));
+  };
+}
+
+function simulateReconnect() {
+  setStatus('', 'reconnecting…');
+  logLine('— closing connection to demonstrate resume/reconnect (TRK-04) —');
+  connectSocket();
+}
+
+function applyProgress(data) {
+  const pct = data.percent_complete ?? 0;
+  document.getElementById('pctValue').textContent = pct;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('reqValue').textContent = data.requirements_extracted ?? 0;
+  document.getElementById('stepValue').innerHTML =
+    (data.current_step ?? 0) + '<span class="unit">/' + (data.total_steps ?? STAGES.length) + '</span>';
+
+  const status = (data.status || '').toLowerCase();
+  const steps = document.querySelectorAll('.step');
+  const activeIdx = STAGES.findIndex(s => s.key === status);
+
+  steps.forEach((el, i) => {
+    el.classList.remove('done', 'active', 'failed');
+    const detail = el.querySelector('[data-detail]');
+    if (status === 'failed') {
+      if (i === Math.max(activeIdx, 0)) el.classList.add('failed');
+      else if (i < activeIdx) el.classList.add('done');
+    } else if (i < activeIdx) {
+      el.classList.add('done');
+      if (detail) detail.textContent = '';
+    } else if (i === activeIdx) {
+      el.classList.add('active');
+      if (detail) detail.textContent = data.message || '';
+    } else if (status === 'ready_for_review' || status === 'finalized') {
+      el.classList.add('done');
+    }
+  });
+}
+
+function logLine(text, isRaw) {
+  const log = document.getElementById('log');
+  const empty = log.querySelector('.empty-state');
+  if (empty) empty.remove();
+  const now = new Date().toLocaleTimeString();
+  const div = document.createElement('div');
+  div.className = 'entry' + (isRaw ? '' : ' event');
+  div.innerHTML = `<span class="t">[${now}]</span> ${text}`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+</script>
+</body>
+</html>

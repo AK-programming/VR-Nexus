@@ -1,0 +1,6 @@
+Presentational primitives with no domain knowledge: Button, Badge, TextField,
+Drawer, Dialog.
+
+A component earns its place here only when a second feature needs it. Until then
+it belongs inside the feature that uses it — guessing at shared components early
+is how you end up with one component taking fourteen props.

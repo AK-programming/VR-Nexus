@@ -1,0 +1,5 @@
+Only types that two or more features genuinely share.
+
+Types for a single feature's endpoints live in features/<name>/types.ts, next to
+the code that uses them. Expect this folder to stay close to empty; if it starts
+filling up, that is a sign a feature boundary is in the wrong place.

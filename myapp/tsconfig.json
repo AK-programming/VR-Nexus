@@ -1,0 +1,9 @@
+{
+  // Solution file. It compiles nothing itself — it exists so editors discover
+  // both projects below and apply the right settings to src/** and to
+  // vite.config.ts, which need different libs and module targets.
+  //
+  // The npm scripts invoke the two leaf configs directly with `tsc -p`.
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+}

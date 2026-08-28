@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+
+/*
+ * Tailwind v4 is configured here, in CSS, not in a tailwind.config.js file.
+ * Every custom name declared in @theme becomes a utility automatically:
+ * --color-brand-500 gives bg-brand-500 / text-brand-500 / border-brand-500,
+ * --font-display gives font-display, --shadow-glow gives shadow-glow.
+ *
+ * The palette is sampled from the two brand assets in src/assets: the red of the
+ * VR-NEXUS mark and the near-black maroon of the circuit backdrop. Nothing here
+ * is a generic Tailwind default — brand-500 is the mark's red, and the ink scale
+ * is warm (a trace of red in the black) so the dark panel and the photographic
+ * background never look like two different blacks sitting next to each other.
+ */
+@theme {
+  /* Sora for headings, numbers and buttons: geometric and slightly squared off,
+     which suits a technical product without tipping into a stencil face.
+     Inter for everything a user reads at 13-15px, where it is more legible. */
+  --font-display:
+    'Sora', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:
+    ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+
+  /* Brand red. 500 is the mark; 600 is the pressed/gradient-end state; 50-200
+     are the tints used for input icon plates and selected cards. */
+  --color-brand-50: #fff1f1;
+  --color-brand-100: #ffdedd;
+  --color-brand-200: #ffc4c2;
+  --color-brand-300: #ff938f;
+  --color-brand-400: #fa4f4c;
+  --color-brand-500: #e8151b;
+  --color-brand-600: #c60d13;
+  --color-brand-700: #a30f14;
+  --color-brand-800: #6d0b0f;
+  --color-brand-900: #3d0508;
+
+  /* The branded panel. Warm blacks, not neutral ones. */
+  --color-ink-700: #3d0d10;
+  --color-ink-800: #2a0709;
+  --color-ink-900: #170305;
+  --color-ink-950: #0a0102;
+
+  /* The form side. `field` is the resting input fill, `hairline` every 1px rule. */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f7f8fa;
+  --color-field: #f4f5f7;
+  --color-hairline: #e6e8ec;
+
+  /* The seam radius, shared by the form panel and the cards inside it so the
+     curve reads as one family rather than three arbitrary roundings. */
+  --radius-panel: 2.5rem;
+
+  /* `glow` is the red halo under the primary button and the seam badge — the one
+     place this design is allowed to be loud. `panel` lifts the form panel off
+     the dark side. */
+  --shadow-glow: 0 18px 40px -14px rgb(232 21 27 / 0.55);
+  --shadow-panel: 0 24px 70px -30px rgb(10 1 2 / 0.55);
+}
+
+@layer base {
+  html {
+    /* Anchor links and programmatic scrolls ease instead of jumping, except for
+       users who have asked the OS for less motion (handled below). */
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface font-sans text-neutral-900 antialiased;
+  }
+
+  /* Numbers in tables and progress readouts should not jitter as they change. */
+  table,
+  time,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* One visible focus ring for the whole app. Every interactive element gets
+     keyboard affordance by default rather than each component remembering to
+     add it — and :focus-visible means mouse users never see it. Components that
+     need a different ring (the role cards, the inputs) override it locally. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

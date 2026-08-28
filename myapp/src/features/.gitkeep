@@ -1,0 +1,6 @@
+One folder per domain. Each holds api/, components/, hooks/, pages/, types.ts
+and an index.ts barrel that is the only thing other features may import from.
+
+A feature may import from components/, hooks/, lib/ and constants/. Nothing in
+those folders may import from a feature — that one-way rule is what keeps this
+tree from turning into a cycle.

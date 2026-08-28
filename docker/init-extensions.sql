@@ -1,0 +1,11 @@
+-- Runs automatically ONLY on first container start (empty data volume).
+-- Creates the pgvector extension inside the application database so the
+-- chunks.embedding and tender_chunks.embedding vector(768) columns work
+-- exactly as they do on a native install.
+--
+-- The pgvector/pgvector image ships the extension's files but does not enable
+-- it in any database, so this has to run before the first Alembic migration.
+-- If the postgres volume already existed before this mount was added, Docker
+-- will not run the script — connect to the database and run the statement
+-- below by hand, or drop the volume and let it re-initialise.
+CREATE EXTENSION IF NOT EXISTS vector;

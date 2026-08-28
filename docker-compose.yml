@@ -1,0 +1,152 @@
+# VR-Nexus — one backend: auth + tender pipeline + Evidence Library.
+#
+# Services: Postgres/pgvector, Redis, the FastAPI app, a Celery worker, Flower.
+#
+# This replaces the two-backend arrangement. `backend/` is now the single API,
+# merged from VR-Nexus-maryam (the tree that owns the real database and the
+# migration chain) with the flat prototype's additions folded in.
+#
+# Four corrections over the version this file replaces, all deliberate:
+#
+#   1. STORAGE_DIR is gone. That was the flat prototype's single storage
+#      setting. The merged Settings splits storage four ways — STORAGE_ROOT,
+#      TENDER_STORAGE_DIR, LIBRARY_STORAGE_DIR, OUTPUT_STORAGE_DIR — because
+#      tender uploads, library assets and generated output folders are separate
+#      concerns. Setting STORAGE_DIR here would have been silently ignored
+#      (Settings has extra="ignore") and every path would have fallen back to
+#      its ./storage default inside the container, i.e. onto the container
+#      filesystem rather than the named volume.
+#
+#   2. The postgres service now mounts docker/init-extensions.sql. The
+#      pgvector/pgvector image ships the extension's files but does not run
+#      CREATE EXTENSION for you, so without this the very first migration failed
+#      on chunks.embedding with "type vector does not exist".
+#
+#   3. The healthcheck no longer hardcodes `-U evidence` while POSTGRES_USER is
+#      overridable — override the user and the healthcheck would never pass, so
+#      api and worker would wait on service_healthy forever.
+#
+#   4. Default credentials now match setup_database.sql (tender_admin /
+#      tender_analysis) so the Docker path and the native-install path describe
+#      the same database instead of two differently-named ones.
+#
+# Host ports are 5432, 6379, 8000 and 5555. myapp/vite.config.ts proxies to
+# 127.0.0.1:8000, so the API port in particular must stay as it is.
+#
+# Note on .env: compose reads ./.env at this directory (repo root) and injects
+# the values as environment variables, which pydantic-settings picks up without
+# needing a file inside the container. Running the backend natively instead
+# (uvicorn from backend/) reads backend/.env, because Settings sets
+# env_file=".env" and that resolves against the process working directory.
+# Those are two different files — keep them in step.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: vrnexus_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tender_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tender_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-tender_analysis}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Runs once, on first start against an empty data volume. If you already
+      # have a volume from before this mount existed, the script will not run —
+      # connect and `CREATE EXTENSION IF NOT EXISTS vector;` by hand, or drop
+      # the volume.
+      - ./docker/init-extensions.sql:/docker-entrypoint-initdb.d/init-extensions.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-tender_admin} -d ${POSTGRES_DB:-tender_analysis}
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: vrnexus_redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vrnexus_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/static:/app/static
+      - storage_data:/data/storage
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - .env
+    environment:
+      - STORAGE_ROOT=/data/storage
+      - TENDER_STORAGE_DIR=/data/storage/tenders
+      - LIBRARY_STORAGE_DIR=/data/storage/library
+      - OUTPUT_STORAGE_DIR=/data/storage/outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vrnexus_worker
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend/app:/app/app
+      - storage_data:/data/storage
+      # The embedding model is ~130MB and is downloaded on first use. Without
+      # this volume every container rebuild re-downloads it.
+      - fastembed_cache:/root/.cache/fastembed
+    env_file:
+      - .env
+    environment:
+      - STORAGE_ROOT=/data/storage
+      - TENDER_STORAGE_DIR=/data/storage/tenders
+      - LIBRARY_STORAGE_DIR=/data/storage/library
+      - OUTPUT_STORAGE_DIR=/data/storage/outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vrnexus_flower
+    command: celery -A app.celery_app flower --port=5555
+    ports:
+      - "127.0.0.1:5555:5555"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+      - worker
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  storage_data:
+  fastembed_cache:

@@ -1,0 +1,5 @@
+The states every screen needs and most forget: Spinner, EmptyState, ErrorState,
+Skeleton, ErrorBoundary.
+
+Keeping them together makes loading and failure the default consideration for a
+new page rather than an afterthought.
