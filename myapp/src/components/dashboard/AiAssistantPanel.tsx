@@ -105,7 +105,11 @@ export function AiAssistantPanel({ suggestions, className }: AiAssistantPanelPro
 
         {/* mt-auto pins the form to the bottom when the grid gives this card more
             height than its content needs, so it lines up with its neighbours. */}
-        <form onSubmit={handleSubmit} className="mt-auto flex items-center gap-2.5 pt-6">
+        {/* `relative` gives the sr-only label below a containing block of its own
+            - without one it positions against the document root and can silently
+            grow page scroll height. See AiAssistantPage.tsx's composer for the
+            full story; same footgun, smaller blast radius here. */}
+        <form onSubmit={handleSubmit} className="relative mt-auto flex items-center gap-2.5 pt-6">
           <label htmlFor="assistant-prompt" className="sr-only">
             Ask the assistant a question
           </label>

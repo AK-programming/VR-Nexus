@@ -43,7 +43,7 @@ from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
-from sqlalchemy import delete
+from sqlalchemy import delete, select, update
 
 from app.celery_app import celery_app  # noqa: F401  (ensures the app is configured)
 from app.core.config import get_settings
@@ -96,19 +96,48 @@ def _advance(
     message: str = "",
     *,
     count: int | None = None,
+    expected_generation: int,
 ) -> None:
-    """Persist stage state onto the Tender row AND publish it.
+    """Persist stage state onto the Tender row AND publish it - but only if
+    this run is still the one that owns the row.
 
-    Both, not either: the WebSocket carries live frames, but a client that
-    connects late or reloads mid-run reads the persisted row (TRK-04) instead
-    of missing the stage. Mirrors tasks/library_indexing._advance.
+    `expected_generation` is the tender's run_generation at the moment this
+    task started (captured once in run_tender_pipeline and threaded down
+    through every call in this module). Cancel and reprocess both bump the
+    column the instant a person acts, so the UPDATE below is conditioned on
+    the generation still matching, in the UPDATE's own WHERE clause rather
+    than a separate SELECT-then-write: there is no window between checking
+    and writing for another process to slip through. A worker that is
+    mid-stage when someone clicks Stop - or Stop, then Retry, before this
+    worker noticed - finds its next write rejected outright (raises
+    TenderCancelled, same as the cooperative check in services/extraction.py)
+    instead of silently overwriting whatever the person's action, or a
+    second worker's fresh run, just set.
+
+    Both DB row and pub/sub, not either: the WebSocket carries live frames,
+    but a client that connects late or reloads mid-run reads the persisted
+    row (TRK-04) instead of missing the stage. Mirrors
+    tasks/library_indexing._advance.
     """
-    tender.status = status
-    tender.progress_percent = max(0, min(100, percent))
-    tender.progress_message = (message or "")[:500] or None
+    values: dict = {
+        "status": status,
+        "progress_percent": max(0, min(100, percent)),
+        "progress_message": (message or "")[:500] or None,
+    }
     if count is not None:
-        tender.extracted_requirements_count = count
+        values["extracted_requirements_count"] = count
+
+    result = db.execute(
+        update(Tender)
+        .where(Tender.id == tender.id, Tender.run_generation == expected_generation)
+        .values(**values)
+    )
     db.commit()
+
+    if result.rowcount == 0:
+        raise TenderCancelled()
+
+    db.refresh(tender)
     publish_progress(
         str(tender.id),
         status,
@@ -131,8 +160,20 @@ def _advance(
     soft_time_limit=3600,
     time_limit=3900,
 )
-def run_tender_pipeline(self, tender_id: str) -> dict:
-    """Parse → chunk → extract → merge → match → report → assemble one tender."""
+def run_tender_pipeline(self, tender_id: str, expected_generation: int) -> dict:
+    """Parse → chunk → extract → merge → match → report → assemble one tender.
+
+    `expected_generation` is the tender's run_generation at the moment this
+    task was enqueued (see enqueue() below) - it is what every write this
+    task makes is conditioned on, all the way down through _advance/_fail.
+    Passed explicitly rather than re-read from the row at task start: a task
+    can sit queued for a while, and by the time it actually runs a later
+    Reprocess may have bumped the column again, enqueueing a second task at
+    that newer generation. Re-reading here would make this task believe it
+    owns that same newer generation too - two tasks racing as if they were
+    one. Carrying the value the caller actually had in hand at enqueue time
+    keeps each task tied to the one specific attempt it represents.
+    """
     db = SessionLocal()
     try:
         tender = db.get(Tender, uuid.UUID(tender_id))
@@ -141,15 +182,31 @@ def run_tender_pipeline(self, tender_id: str) -> dict:
             logger.warning("Tender %s no longer exists; nothing to process.", tender_id)
             return {"status": "missing", "tender_id": tender_id}
 
+        if tender.run_generation != expected_generation:
+            # Superseded before this task even got a worker slot - e.g. it sat
+            # queued behind other jobs while a Stop, then Retry, already moved
+            # the tender on. Nothing to do; the newer task owns the row now.
+            logger.info(
+                "Tender %s superseded before its pipeline started "
+                "(expected generation %s, row is now at %s); skipping.",
+                tender_id, expected_generation, tender.run_generation,
+            )
+            return {"status": "superseded", "tender_id": tender_id}
+
+        # Claim this task instance on the row so Cancel can revoke it directly,
+        # on top of the cooperative checks the generation guard provides below.
+        tender.celery_task_id = self.request.id
+        db.commit()
+
         try:
-            return _run_pipeline(db, tender)
+            return _run_pipeline(db, tender, expected_generation)
         except TenderCancelled:
             logger.info("Tender %s stopped by user.", tender_id)
-            _fail(db, tender, "Stopped by user.")
+            _fail(db, tender, "Stopped by user.", expected_generation)
             return {"status": "cancelled", "tender_id": tender_id}
         except Exception as exc:  # noqa: BLE001 - record failure state either way
             logger.exception("Tender pipeline failed for %s", tender_id)
-            _fail(db, tender, str(exc) or type(exc).__name__, exc=exc)
+            _fail(db, tender, str(exc) or type(exc).__name__, expected_generation, exc=exc)
             return {"status": "failed", "tender_id": tender_id, "error": str(exc)}
     finally:
         db.close()
@@ -181,8 +238,11 @@ def _error_detail(exc: BaseException) -> str:
     return detail[:ERROR_DETAIL_LIMIT]
 
 
-def _fail(db, tender: Tender, message: str, exc: BaseException | None = None) -> None:
-    """Record a terminal failure on the row and publish it.
+def _fail(
+    db, tender: Tender, message: str, expected_generation: int, exc: BaseException | None = None
+) -> None:
+    """Record a terminal failure on the row and publish it - unless this run
+    has already been superseded.
 
     The failing stage may have left uncommitted work; discard it, then record the
     failure. Prior stages are already committed by _advance and survive.
@@ -191,28 +251,68 @@ def _fail(db, tender: Tender, message: str, exc: BaseException | None = None) ->
     to its last committed state, so `tender.status` read *after* it is the stage
     _advance last completed — the stage the run was actually in — rather than
     whatever a half-applied update left in the session.
+
+    Gated on `expected_generation` the same way _advance is, and for the same
+    reason: TenderCancelled means someone acted on this tender already, and if
+    that action was Stop-then-Retry rather than only Stop, a *second* worker
+    may already be running the new attempt. Writing FAILED unconditionally
+    here would clobber that new run's live status the instant it raced ahead
+    of this stale one - the exact bug this whole guard exists to prevent, just
+    relocated to the error path instead of the success path.
     """
     db.rollback()
 
     stage = tender.status.value if tender.status else None
+    detail = _error_detail(exc) if exc is not None else message[:ERROR_DETAIL_LIMIT]
 
-    tender.status = TenderStatus.FAILED
-    tender.progress_message = message[:500]
-    tender.failed_stage = stage
-    tender.error_detail = _error_detail(exc) if exc is not None else message[:ERROR_DETAIL_LIMIT]
-    tender.failed_at = datetime.now(timezone.utc)
+    result = db.execute(
+        update(Tender)
+        .where(Tender.id == tender.id, Tender.run_generation == expected_generation)
+        .values(
+            status=TenderStatus.FAILED,
+            progress_message=message[:500],
+            failed_stage=stage,
+            error_detail=detail,
+            failed_at=datetime.now(timezone.utc),
+        )
+    )
     db.commit()
+
+    if result.rowcount == 0:
+        logger.info(
+            "Tender %s was superseded before this failure could be recorded; discarding it.",
+            tender.id,
+        )
+        return
+
+    db.refresh(tender)
     publish_progress(str(tender.id), TenderStatus.FAILED, message=message[:500])
+
+
+def _assert_generation(db, tender: Tender, expected_generation: int) -> None:
+    """Stop before a stage mutates data for a superseded pipeline run."""
+    db.rollback()
+    current_generation = db.scalar(
+        select(Tender.run_generation).where(
+            Tender.id == tender.id,
+            Tender.run_generation == expected_generation,
+        )
+    )
+    if current_generation is None:
+        raise TenderCancelled()
 
 
 # --------------------------------------------------------------------------- #
 # pipeline                                                                    #
 # --------------------------------------------------------------------------- #
-def _run_pipeline(db, tender: Tender) -> dict:
+def _run_pipeline(db, tender: Tender, expected_generation: int) -> dict:
     content = _read_source(tender)
 
     # ---- PARSING ----------------------------------------------------------
-    _advance(db, tender, TenderStatus.PARSING, 5, "Extracting text and tables per page.")
+    _advance(
+        db, tender, TenderStatus.PARSING, 5, "Extracting text and tables per page.",
+        expected_generation=expected_generation,
+    )
     pages = extract_pdf_pages(content)
     if not pages:
         raise RuntimeError("No pages could be extracted from this PDF.")
@@ -225,12 +325,14 @@ def _run_pipeline(db, tender: Tender) -> dict:
     _advance(
         db, tender, TenderStatus.CHUNKING, 20,
         f"Detecting sections across {len(pages)} page(s).",
+        expected_generation=expected_generation,
     )
     sectioned = detect_section_boundaries(pages)
     chunks = chunk_sectioned_pages(sectioned)
     guard_against_whole_document_ingestion(chunks)
 
     # Idempotent re-run: replace this tender's own chunks, nothing else.
+    _assert_generation(db, tender, expected_generation)
     db.execute(delete(TenderChunk).where(TenderChunk.tender_id == tender.id))
     for c in chunks:
         db.add(
@@ -250,37 +352,51 @@ def _run_pipeline(db, tender: Tender) -> dict:
         db, tender, TenderStatus.CHUNKING, 33,
         f"Chunked into {len(chunks)} chunk(s) across "
         f"{len({c.section for c in chunks})} section(s).",
+        expected_generation=expected_generation,
     )
 
     # ---- EXTRACTING (35-60%) + MERGING -----------------------------------
     # run_extraction dedups by clause+description hash as it goes, so MERGING is
     # effectively already done when it returns; we mark it for the timeline.
+    _assert_generation(db, tender, expected_generation)
     db.execute(delete(Requirement).where(Requirement.tender_id == tender.id))
     db.commit()
     extraction_result = asyncio.run(run_extraction(db, tender))
+    _assert_generation(db, tender, expected_generation)
     created = extraction_result["created"]
     _advance(
         db, tender, TenderStatus.MERGING, 62,
         f"Merged & de-duplicated: {created} unique requirement(s).",
         count=created,
+        expected_generation=expected_generation,
     )
 
     # ---- MATCHING (65-82%) ------------------------------------------------
-    match_summary = _run_matching(db, tender)
+    match_summary = _run_matching(db, tender, expected_generation)
 
     # ---- REPORTING (85-90%) ----------------------------------------------
-    _advance(db, tender, TenderStatus.REPORTING, 85, "Computing marks and coverage.")
+    _advance(
+        db, tender, TenderStatus.REPORTING, 85, "Computing marks and coverage.",
+        expected_generation=expected_generation,
+    )
     report_summary = _compute_report(db, tender)
     _advance(
         db, tender, TenderStatus.REPORTING, 90,
         f"Report ready: {report_summary['captured']:g}/{report_summary['available']:g} "
         "marks auto-covered.",
+        expected_generation=expected_generation,
     )
 
     # ---- ASSEMBLING_FOLDER (92-98%) --------------------------------------
-    _advance(db, tender, TenderStatus.ASSEMBLING_FOLDER, 92, "Assembling output folder.")
+    _advance(
+        db, tender, TenderStatus.ASSEMBLING_FOLDER, 92, "Assembling output folder.",
+        expected_generation=expected_generation,
+    )
     _assemble_folder(db, tender)
-    _advance(db, tender, TenderStatus.ASSEMBLING_FOLDER, 98, "Output folder assembled.")
+    _advance(
+        db, tender, TenderStatus.ASSEMBLING_FOLDER, 98, "Output folder assembled.",
+        expected_generation=expected_generation,
+    )
 
     # ---- READY_FOR_REVIEW (100%) -----------------------------------------
     # Deliberately NOT terminal for the socket: the run has paused for a human,
@@ -289,6 +405,7 @@ def _run_pipeline(db, tender: Tender) -> dict:
         db, tender, TenderStatus.READY_FOR_REVIEW, 100,
         "Analysis complete — ready for review.",
         count=created,
+        expected_generation=expected_generation,
     )
 
     return {
@@ -373,7 +490,7 @@ def _parse_date(value) -> date | None:
 # --------------------------------------------------------------------------- #
 # MATCHING                                                                    #
 # --------------------------------------------------------------------------- #
-def _run_matching(db, tender: Tender) -> dict:
+def _run_matching(db, tender: Tender, expected_generation: int) -> dict:
     """For each requirement that actually needs evidence, semantic-search the
     Evidence Library and record the candidate documents as
     RequirementEvidenceMatch rows, typed by confidence.
@@ -419,6 +536,7 @@ def _run_matching(db, tender: Tender) -> dict:
     _advance(
         db, tender, TenderStatus.MATCHING, 65,
         f"Matching {total} requirement(s) to the evidence library.",
+        expected_generation=expected_generation,
     )
     if total == 0:
         return {"auto_matches": 0, "suggested_matches": 0, "missing_matches": 0,
@@ -432,6 +550,7 @@ def _run_matching(db, tender: Tender) -> dict:
                 _advance(
                     db, tender, TenderStatus.MATCHING, percent,
                     f"Matched {i} of {total} requirement(s).",
+                    expected_generation=expected_generation,
                 )
             continue
 
@@ -498,6 +617,7 @@ def _run_matching(db, tender: Tender) -> dict:
             _advance(
                 db, tender, TenderStatus.MATCHING, percent,
                 f"Matched {i} of {total} requirement(s).",
+                expected_generation=expected_generation,
             )
 
     return {
@@ -972,6 +1092,12 @@ def rebuild_outputs(db, tender: Tender) -> str:
 # --------------------------------------------------------------------------- #
 # enqueue                                                                     #
 # --------------------------------------------------------------------------- #
-def enqueue(tender_id: uuid.UUID | str):
-    """Queue a pipeline run. Called by the API's upload endpoint."""
-    return run_tender_pipeline.delay(str(tender_id))
+def enqueue(tender_id: uuid.UUID | str, run_generation: int):
+    """Queue a pipeline run, tagged with the tender's current run_generation.
+
+    Called by the API's upload endpoint (generation 0, the row's default) and
+    by reprocess (after it has already bumped the counter). The generation is
+    passed explicitly rather than left for the task to read off the row itself
+    at start - see run_tender_pipeline's own docstring for why that matters.
+    """
+    return run_tender_pipeline.delay(str(tender_id), run_generation)

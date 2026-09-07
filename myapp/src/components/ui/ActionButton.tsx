@@ -77,8 +77,14 @@ export function ActionButton({
   disabled = false,
   to,
 }: ActionButtonProps) {
+  /* `relative` up front: with `hideLabelOnMobile`, the label below collapses to
+     sr-only under sm, and a sr-only element with no positioned ancestor anchors
+     against the document root instead of this control - which can grow the whole
+     page's scroll height on a narrow viewport. Applied unconditionally rather than
+     only when hideLabelOnMobile is set, since it costs nothing and keeps `classes`
+     one definition both render paths share. */
   const classes = [
-    'inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap',
+    'relative inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap',
     'transition-all duration-150',
     SIZE_CLASSES[size],
     VARIANT_CLASSES[variant],

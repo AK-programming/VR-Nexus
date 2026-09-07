@@ -127,7 +127,7 @@ function MetadataField({
 function PendingStatusMark({ upload }: { upload: PendingUpload }) {
   if (upload.status === 'uploading') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-800">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-800 dark:text-sky-300">
         <SpinnerIcon className="size-3.5 animate-spin" />
         Sending
       </span>
@@ -136,7 +136,7 @@ function PendingStatusMark({ upload }: { upload: PendingUpload }) {
 
   if (upload.status === 'uploaded') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-800">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300">
         <CheckCircleIcon className="size-3.5" />
         Uploaded
       </span>
@@ -145,7 +145,7 @@ function PendingStatusMark({ upload }: { upload: PendingUpload }) {
 
   if (upload.status === 'rejected') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-800">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-800 dark:text-rose-300">
         <XCircleIcon className="size-3.5" />
         Not accepted
       </span>
@@ -490,7 +490,9 @@ export function UploadDocumentsPage() {
                           <p
                             className={[
                               'mt-1.5 flex items-start gap-1.5 text-xs leading-relaxed',
-                              upload.status === 'rejected' ? 'text-rose-800' : 'text-amber-800',
+                              upload.status === 'rejected'
+                                ? 'text-rose-800 dark:text-rose-300'
+                                : 'text-amber-800 dark:text-amber-300',
                             ].join(' ')}
                           >
                             <AlertTriangleIcon className="mt-px size-3.5 shrink-0" />
@@ -501,7 +503,7 @@ export function UploadDocumentsPage() {
                         {/* Belt and braces: the drop zone already refuses these, but a
                             file added before a limit changed would sit here silently. */}
                         {unsupported && upload.status === 'ready' ? (
-                          <p className="mt-1.5 text-xs text-rose-800">
+                          <p className="mt-1.5 text-xs text-rose-800 dark:text-rose-300">
                             This file type is not supported and will be refused.
                           </p>
                         ) : null}

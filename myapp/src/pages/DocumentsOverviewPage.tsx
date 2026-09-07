@@ -395,7 +395,7 @@ export function DocumentsOverviewPage() {
           {document.training_status === 'failed' && document.training_error ? (
             <span
               title={document.training_error}
-              className="block max-w-[14rem] truncate text-xs text-rose-700"
+              className="block max-w-[14rem] truncate text-xs text-rose-700 dark:text-rose-300"
             >
               {document.training_error}
             </span>
@@ -559,7 +559,10 @@ export function DocumentsOverviewPage() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row lg:shrink-0">
-              <div className="sm:w-44">
+              {/* relative: gives the sr-only label a containing block of its own
+                  rather than the document root - see AiAssistantPage.tsx's
+                  composer for what happens without one. */}
+              <div className="relative sm:w-44">
                 <label htmlFor="library-category" className="sr-only">
                   Filter by category
                 </label>
@@ -578,7 +581,7 @@ export function DocumentsOverviewPage() {
                 </select>
               </div>
 
-              <div className="sm:w-40">
+              <div className="relative sm:w-40">
                 <label htmlFor="library-status" className="sr-only">
                   Filter by status
                 </label>

@@ -117,6 +117,16 @@ class TrainRequest(BaseModel):
     document_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
+class WsTicketOut(BaseModel):
+    """A short-lived, single-use ticket for the library indexing progress
+    WebSocket. Minted over this ordinary authenticated HTTP call and handed
+    to the socket as `?ticket=` instead of a bearer token - see
+    app/services/ws_tickets.py for why.
+    """
+
+    ticket: str
+
+
 class JobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

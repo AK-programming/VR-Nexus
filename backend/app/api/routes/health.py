@@ -1,10 +1,10 @@
 """Health probes — /api/health/llm.
 
 Purpose: answer "why is extraction failing?" without having to re-run a full
-tender and read the worker log. The probe hits Gemini through the exact URL,
-authorization header and request shape `services/extraction.py` uses (same
-`AsyncOpenAI` client, same base URL, same model), so its reply is the same
-reply an extraction chunk would get. If the key is rejected, the model is
+tender and read the worker log. The probe hits Anthropic through the exact
+URL, authorization header and request shape `services/extraction.py` uses
+(same `AsyncOpenAI` client, same base URL, same model), so its reply is the
+same reply an extraction chunk would get. If the key is rejected, the model is
 retired, the network is blocked, or the quota is spent, the operator sees the
 underlying HTTP error verbatim rather than a downstream "0 requirements
 extracted" mystery.
@@ -104,7 +104,7 @@ async def check_llm(current_user: User = Depends(get_current_user)) -> dict[str,
         return {
             "ok": False,
             **payload,
-            "error": "The LLM did not respond within 12 seconds. The worker's network may be blocked from generativelanguage.googleapis.com.",
+            "error": "The LLM did not respond within 12 seconds. The worker's network may be blocked from api.anthropic.com.",
         }
     except Exception as exc:  # noqa: BLE001 - the whole point is to surface it
         logger.exception("LLM health probe failed")

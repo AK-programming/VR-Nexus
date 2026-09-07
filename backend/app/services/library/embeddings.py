@@ -2,14 +2,16 @@
 Section 6.1 - Document Indexing & Vectorization Pipeline
 Linked requirement: LIB-IDX-05
 
-Runs locally via fastembed (ONNX, CPU-only) rather than a hosted API.
-This was a deliberate switch away from the Implementation Plan's original
-choice of Google's text-embedding-004: the team decided against adding a
-Google API key dependency, and separately, the third-party LLM router
-some teammates were using for other calls doesn't serve embedding models
-at all. Local inference removes both problems, at the cost of the vectors
-being a different model than originally planned - anything embedded
-before this switch would need re-indexing to be comparable.
+Runs locally via fastembed (ONNX, CPU-only) rather than a hosted API. This was
+a deliberate switch away from the Implementation Plan's original choice of a
+hosted embedding model: the team decided against adding a second API-key
+dependency for embeddings on top of the one Claude key that already powers
+extraction, tagging and Ask - and Anthropic itself does not serve an
+embeddings endpoint, so there is no way to keep this on the same key/provider
+even if a hosted model were wanted here. Local inference removes the
+dependency entirely, at the cost of the vectors being a different model than
+originally planned - anything embedded before this switch would need
+re-indexing to be comparable.
 
 To switch to a hosted provider later: add a subclass, register it in
 get_provider(), and add an Alembic migration changing the vector column's

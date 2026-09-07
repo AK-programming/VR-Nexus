@@ -169,7 +169,7 @@ function MetadataField({
 function FileStatusMark({ state }: { state: 'ready' | 'uploading' | 'saving' | 'uploaded' }) {
   if (state === 'uploading') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-800">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-800 dark:text-sky-300">
         <SpinnerIcon className="size-3.5 animate-spin" />
         Sending
       </span>
@@ -178,7 +178,7 @@ function FileStatusMark({ state }: { state: 'ready' | 'uploading' | 'saving' | '
 
   if (state === 'saving') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-800">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-800 dark:text-sky-300">
         <SpinnerIcon className="size-3.5 animate-spin" />
         Saving details
       </span>
@@ -187,7 +187,7 @@ function FileStatusMark({ state }: { state: 'ready' | 'uploading' | 'saving' | '
 
   if (state === 'uploaded') {
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-800">
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-800 dark:text-emerald-300">
         <CheckCircleIcon className="size-3.5" />
         Uploaded
       </span>

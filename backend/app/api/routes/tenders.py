@@ -52,9 +52,12 @@ from app.schemas.tender import (
     TenderReportOut,
     TenderUpdate,
     TenderUploadResponse,
+    WsTicketOut,
 )
 from app.services.progress import publish_progress
 from app.services.tender_storage import save_tender_file, validate_tender_upload
+from app.services.ws_tickets import issue_ticket
+from app.celery_app import celery_app
 from app.tasks.tender_pipeline import enqueue as enqueue_pipeline, rebuild_outputs
 
 logger = logging.getLogger(__name__)
@@ -71,6 +74,15 @@ _MATCH_TYPE_RANK = {MatchType.AUTO: 3, MatchType.SUGGESTED: 2, MatchType.MISSING
 # helpers                                                                     #
 # --------------------------------------------------------------------------- #
 def _get_tender(db: Session, tender_id: uuid.UUID) -> Tender:
+    """Fetch a tender by id - deliberately with no owner/uploader check.
+
+    Every tender in this app is visible and actionable by every signed-in
+    user, on purpose: this is a shared workspace for one internal sales team,
+    not a multi-tenant product, and `uploaded_by` exists for attribution (who
+    brought this tender in), not access control. If VR-Nexus ever needs to
+    scope tenders to their uploader, this is the one place to add that check -
+    every route below calls through here.
+    """
     tender = db.get(Tender, tender_id)
     if tender is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Tender not found.")
@@ -166,7 +178,7 @@ async def upload_tender(
         str(tender.id), TenderStatus.UPLOADED,
         message="File received and queued for analysis.",
     )
-    enqueue_pipeline(tender.id)
+    enqueue_pipeline(tender.id, tender.run_generation)
 
     return TenderUploadResponse.model_validate(tender)
 
@@ -196,6 +208,24 @@ def get_tender(
     db: Session = Depends(get_db),
 ) -> TenderOut:
     return _tender_out(_get_tender(db, tender_id))
+
+
+@router.post("/{tender_id}/ws-ticket", response_model=WsTicketOut)
+def create_tender_ws_ticket(
+    tender_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WsTicketOut:
+    """Mint a one-shot ticket for /ws/tenders/{tender_id}/progress.
+
+    Called over a normal authenticated fetch() right before opening the
+    socket, so the real access token never has to leave this response and
+    land in a WebSocket URL (browser history, proxy logs, Referer). See
+    app/services/ws_tickets.py for the full rationale.
+    """
+    _get_tender(db, tender_id)  # 404s on a bad id before we bother minting anything
+    ticket = issue_ticket(current_user.id, "tender", str(tender_id))
+    return WsTicketOut(ticket=ticket)
 
 
 @router.patch("/{tender_id}", response_model=TenderOut)
@@ -551,11 +581,17 @@ def cancel_tender(
 
     Marks the tender FAILED with a "Stopped by user." message and publishes that
     over the progress socket (terminal, so a watching client stops immediately).
-    The running worker is not killed outright; instead the long extraction stage
-    checks this row every few chunks (see services/extraction.TenderCancelled)
-    and bails when it sees FAILED, so a stuck run actually halts rather than only
-    being relabelled. Only allowed while the tender is still in flight — a tender
-    at ready_for_review, finalized or already failed has nothing to stop.
+
+    Two layers, not one. `run_generation` is bumped first: every write the
+    worker makes back onto this row (tasks/tender_pipeline._advance / _fail) is
+    conditioned on that value, so as of this commit the running worker's next
+    check-in is rejected outright, no matter how long it takes to notice. On
+    top of that, if we know which Celery task owns the row, we send it a hard
+    revoke - best-effort, since terminate depends on the worker pool actually
+    supporting it, which is exactly why the generation bump above is the real
+    guarantee and this is only how the stop happens sooner rather than only
+    correctly. Only allowed while the tender is still in flight — a tender at
+    ready_for_review, finalized or already failed has nothing to stop.
     """
     tender = _get_tender(db, tender_id)
     settled = (
@@ -573,7 +609,9 @@ def cancel_tender(
     # "how far did it get?" wants, and assigning FAILED first would record "failed"
     # as the stage it was stopped at, which says nothing.
     stopped_at = tender.status.value
+    task_id = tender.celery_task_id
 
+    tender.run_generation += 1
     tender.status = TenderStatus.FAILED
     tender.progress_message = "Stopped by user."
     # Recorded like any other failure so the Processing page's error log shows the
@@ -584,6 +622,9 @@ def cancel_tender(
     tender.failed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(tender)
+
+    if task_id:
+        celery_app.control.revoke(task_id, terminate=True)
 
     publish_progress(
         str(tender.id), TenderStatus.FAILED,
@@ -609,9 +650,14 @@ def reprocess_tender(
     reset to UPLOADED first so the progress socket and the Processing queue both
     treat it as a fresh run.
 
-    Only allowed for a tender that is not currently running — a tender still in
-    flight has to be stopped first (409), which keeps two workers off the same
-    tender.
+    Bumping `run_generation` here is what actually keeps two workers off the
+    same tender, not just the 409 below. The 409 only blocks a *second click*
+    while the row still reads as running; it does nothing about a worker that
+    was told to stop (via Cancel, which bumped the generation once already) but
+    hasn't actually noticed yet. Reprocess can be called the instant the row
+    reads FAILED, which is immediately - so bumping the generation again here
+    guarantees that stale worker's next write is rejected too, even though a
+    brand new task for this fresh attempt is about to start racing it.
     """
     tender = _get_tender(db, tender_id)
     if tender.status not in (
@@ -624,6 +670,10 @@ def reprocess_tender(
             "This tender is still being analysed. Stop it before retrying.",
         )
 
+    old_folder_path = tender.output_folder_path
+    old_zip_path = tender.output_zip_path
+    tender.run_generation += 1
+    tender.celery_task_id = None
     tender.status = TenderStatus.UPLOADED
     tender.progress_percent = 0
     tender.progress_message = "Queued for re-analysis."
@@ -634,14 +684,28 @@ def reprocess_tender(
     tender.error_detail = None
     tender.failed_at = None
     tender.support_requested_at = None
+    tender.output_folder_path = None
+    tender.output_zip_path = None
     db.commit()
     db.refresh(tender)
+
+    for path_str in (old_zip_path, old_folder_path):
+        if not path_str:
+            continue
+        try:
+            path = Path(path_str)
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            elif path.is_file():
+                path.unlink()
+        except OSError:
+            logger.exception("Failed to remove stale tender output at %s", path_str)
 
     publish_progress(
         str(tender.id), TenderStatus.UPLOADED,
         percent=0, message="Queued for re-analysis.",
     )
-    enqueue_pipeline(tender.id)
+    enqueue_pipeline(tender.id, tender.run_generation)
     return _tender_out(tender)
 
 

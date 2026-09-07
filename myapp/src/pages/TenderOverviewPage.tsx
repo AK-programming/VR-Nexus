@@ -538,7 +538,10 @@ export function TenderOverviewPage() {
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row lg:shrink-0">
-            <div className="sm:w-48">
+            {/* relative: gives the sr-only label a containing block of its own
+                rather than the document root - see AiAssistantPage.tsx's
+                composer for what happens without one. */}
+            <div className="relative sm:w-48">
               <label htmlFor="tender-status" className="sr-only">
                 Filter by status
               </label>

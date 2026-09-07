@@ -846,7 +846,7 @@ function DownloadFileButton({
       {failure !== null ? (
         <p
           role="status"
-          className="max-w-60 text-xs leading-relaxed text-rose-700 sm:text-right"
+          className="max-w-60 text-xs leading-relaxed text-rose-700 sm:text-right dark:text-rose-300"
         >
           {failure}
         </p>

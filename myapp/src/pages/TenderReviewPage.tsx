@@ -83,11 +83,15 @@ function StatTile({
   hint?: string
   tone?: 'neutral' | 'emerald' | 'amber' | 'rose'
 }) {
+  // dark: overrides here because these render as bare status-coloured text on
+  // a `bg-surface` card, with no matching coloured background of their own to
+  // carry contrast the way a chip does - see the `@custom-variant dark`
+  // comment in index.css.
   const valueTone: Record<typeof tone, string> = {
     neutral: 'text-neutral-900',
-    emerald: 'text-emerald-700',
-    amber: 'text-amber-700',
-    rose: 'text-rose-700',
+    emerald: 'text-emerald-700 dark:text-emerald-300',
+    amber: 'text-amber-700 dark:text-amber-300',
+    rose: 'text-rose-700 dark:text-rose-300',
   }
   return (
     <div className="rounded-2xl border border-hairline bg-surface p-4 shadow-sm">

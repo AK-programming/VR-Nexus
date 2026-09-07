@@ -41,9 +41,9 @@ const NODE_STYLES: Record<StageState, string> = {
 
 const LABEL_STYLES: Record<StageState, string> = {
   done: 'text-neutral-900',
-  active: 'text-sky-800',
+  active: 'text-sky-800 dark:text-sky-300',
   pending: 'text-neutral-500',
-  failed: 'text-rose-800',
+  failed: 'text-rose-800 dark:text-rose-300',
 }
 
 /** What a screen reader hears instead of the colour it cannot see. */

@@ -15,8 +15,11 @@ import { ApiError, api, errorMessage } from '@/lib/apiClient'
 import { normalizeUser } from '@/models'
 import type {
   AuthFailure,
+  ForgotPasswordRequest,
   LoginRequest,
+  MessageResponse,
   RegisterRequest,
+  ResetPasswordRequest,
   TokenResponse,
   User,
 } from '@/models'
@@ -40,6 +43,8 @@ export const AUTH_ENDPOINTS = {
   register: '/api/auth/register',
   refresh: '/api/auth/refresh',
   me: '/api/auth/me',
+  forgotPassword: '/api/auth/forgot-password',
+  resetPassword: '/api/auth/reset-password',
 } as const
 
 /**
@@ -111,6 +116,45 @@ export const authService = {
    */
   async me(signal?: AbortSignal): Promise<User> {
     return normalizeUser(await api.get<User>(AUTH_ENDPOINTS.me, { signal }))
+  },
+
+  /**
+   * Requests a password reset email for the given address. `anonymous`
+   * because whoever is filling this in has, by definition, no working
+   * session to attach — that is the entire reason they are on this screen.
+   *
+   * The server answers 404 when the address has no account, with a message
+   * written for the sign-up-first sales rep this is really for — see the
+   * endpoint's own docstring. That arrives as a rejected promise like any
+   * other error; there is nothing to classify here beyond showing the
+   * server's sentence, so this has no `classify*` counterpart the way login
+   * does.
+   */
+  async forgotPassword(
+    payload: ForgotPasswordRequest,
+    signal?: AbortSignal,
+  ): Promise<MessageResponse> {
+    return api.postJson<MessageResponse>(AUTH_ENDPOINTS.forgotPassword, payload, {
+      signal,
+      anonymous: true,
+    })
+  },
+
+  /**
+   * Redeems a reset token — the `?token=` value from the emailed link — for a
+   * new password. The token is opaque to this client; only the server that
+   * signed it can say whether it is genuine and still inside its 30-minute
+   * window, and an invalid or expired one comes back as a plain 400 with a
+   * message meant to be shown as-is.
+   */
+  async resetPassword(
+    payload: ResetPasswordRequest,
+    signal?: AbortSignal,
+  ): Promise<MessageResponse> {
+    return api.postJson<MessageResponse>(AUTH_ENDPOINTS.resetPassword, payload, {
+      signal,
+      anonymous: true,
+    })
   },
 }
 

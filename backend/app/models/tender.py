@@ -112,6 +112,25 @@ class Tender(Base, UUIDPKMixin, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
+    # --- run identity (cancel/reprocess race guard) ---
+    # `run_generation` names which pipeline "attempt" currently owns this row.
+    # Cancel and reprocess both bump it the instant a person acts; the worker
+    # captures the value at task start and every write it makes back onto this
+    # row (_advance, _fail in tasks/tender_pipeline.py) is conditioned on the
+    # generation still matching. Without this, a worker that is mid-stage when
+    # someone clicks Stop - or Stop, then Retry, before that worker noticed -
+    # can silently overwrite whatever the person's action just set, including
+    # a second worker's in-progress run after a Retry. See tasks/tender_pipeline
+    # for the write side of this guard.
+    run_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # The Celery task id of whichever run currently owns this row (set by the
+    # worker itself at the top of run_tender_pipeline). Cancel uses it to send
+    # a hard revoke on top of the cooperative generation check above - belt and
+    # braces, since revoke's terminate is best-effort and pool-dependent, while
+    # the generation guard is what actually guarantees correctness either way.
+    celery_task_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
     # --- relationships ---
     uploaded_by_user: Mapped[Optional["User"]] = relationship(  # noqa: F821
         back_populates="uploaded_tenders", foreign_keys=[uploaded_by]

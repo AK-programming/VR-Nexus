@@ -52,7 +52,9 @@ export interface AuthState {
 
   /**
    * A success message to show on the *next* screen — set by `register` and read
-   * by the sign-in page, which is where the user lands afterwards.
+   * by the sign-in page, which is where the user lands afterwards. The reset
+   * password flow uses the same field, via `setNotice`, to greet the user with
+   * "your password has been reset" once they land back on sign-in.
    */
   notice: string | null
 
@@ -73,6 +75,15 @@ export interface AuthState {
 
   clearFailure: () => void
   clearNotice: () => void
+
+  /**
+   * Sets the notice shown on the next screen the user lands on. Exists for
+   * `ResetPasswordPage`, which is not itself part of the login/register flow
+   * above but wants the same "here's what just happened" banner on sign-in
+   * once the reset completes — reusing the field beats inventing a second one
+   * that LoginPage would also have to know how to read.
+   */
+  setNotice: (message: string) => void
 }
 
 /**
@@ -322,6 +333,10 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   clearNotice() {
     set({ notice: null })
+  },
+
+  setNotice(message) {
+    set({ notice: message })
   },
 }))
 

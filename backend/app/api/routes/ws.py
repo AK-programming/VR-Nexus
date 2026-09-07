@@ -5,11 +5,15 @@ Linked requirements: TRK-01, TRK-04
 
 WebSockets can't carry the "Authorization: Bearer <token>" header the way
 a normal fetch() can (browsers don't expose custom headers on the
-WebSocket constructor), so the access token is passed as a query param
-instead: /ws/tenders/{id}/progress?token=<access_token>. It's decoded with
-the exact same decode_token() Task 1.2 already uses for HTTP routes, so
-the same JWT works everywhere - the client doesn't need a second kind of
-credential just for this connection.
+WebSocket constructor), so a credential still has to travel as a query
+param: /ws/tenders/{id}/progress?ticket=<ticket>. It used to be the real
+24h access token, but that put a long-lived bearer credential in browser
+history and every proxy access log for as long as it stayed valid. Now
+it's a short-lived, single-use ticket minted a moment earlier over
+POST /api/tenders/{id}/ws-ticket (an ordinary authenticated fetch(), which
+CAN carry a real Authorization header) and redeemed exactly once here via
+app.services.ws_tickets.redeem_ticket. See that module for the full
+rationale.
 
 TRK-04 (resume/reconnect): the moment a client connects - whether this is
 the very first connection or a reconnect after the tab was closed for ten
@@ -34,40 +38,31 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
-from app.core.security import TokenType, decode_token
 from app.models.enums import TenderStatus
 from app.models.tender import Tender
-from app.models.user import User
 from app.services.progress import get_latest_progress
+from app.services.ws_tickets import redeem_ticket
 
 router = APIRouter(tags=["progress"])
 
 _TERMINAL_STATUSES = {TenderStatus.FINALIZED.value, TenderStatus.FAILED.value}
 
 
-async def _authenticate(websocket: WebSocket, token: str | None) -> User | None:
-    if not token:
+def _authenticate(tender_id: str, ticket: str | None) -> uuid.UUID | None:
+    """Redeem a ws-ticket scoped to this tender, returning the user id it was
+    issued to (or None if it's missing, expired, already used, or minted for
+    a different tender). Redemption is single-use - a second attempt with the
+    same ticket, even from the same client retrying, gets None."""
+    if not ticket:
         return None
-    payload = decode_token(token)
-    if payload is None or payload.get("type") != TokenType.ACCESS.value:
-        return None
-    db = SessionLocal()
-    try:
-        try:
-            user_id = uuid.UUID(payload.get("sub"))
-        except (TypeError, ValueError):
-            return None
-        user = db.get(User, user_id)
-        return user if user and user.is_active else None
-    finally:
-        db.close()
+    return redeem_ticket(ticket, "tender", tender_id)
 
 
 @router.websocket("/ws/tenders/{tender_id}/progress")
-async def tender_progress_ws(websocket: WebSocket, tender_id: str, token: str | None = None):
-    user = await _authenticate(websocket, token)
-    if user is None:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or missing token")
+async def tender_progress_ws(websocket: WebSocket, tender_id: str, ticket: str | None = None):
+    user_id = _authenticate(tender_id, ticket)
+    if user_id is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or missing ticket")
         return
 
     try:

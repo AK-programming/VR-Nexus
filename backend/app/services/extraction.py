@@ -202,11 +202,11 @@ def _strip_markdown_fence(raw: str) -> str:
 def _coerce_json(raw: str) -> str:
     """Return the JSON payload from a model response.
 
-    Anthropic's messages API returned fairly clean JSON; Gemini through the
-    OpenAI-compatible endpoint is usually clean too but occasionally frames the
-    object with a sentence. Strip a markdown fence, then, if the text does not
-    already start as JSON, take the widest {...} span. Validation downstream is
-    still the real gate — this only improves the odds it succeeds first try."""
+    Claude, through Anthropic's OpenAI-compatible endpoint, usually returns
+    clean JSON but occasionally frames the object with a sentence. Strip a
+    markdown fence, then, if the text does not already start as JSON, take the
+    widest {...} span. Validation downstream is still the real gate — this
+    only improves the odds it succeeds first try."""
     cleaned = _strip_markdown_fence(raw)
     if cleaned.startswith("{") or cleaned.startswith("["):
         return cleaned
@@ -396,7 +396,7 @@ async def run_extraction(db: Session, tender: Tender) -> dict:
     # Extraction is I/O-bound — one LLM round-trip per chunk — so the chunks run
     # CONCURRENTLY, bounded by a semaphore, rather than strictly one after another.
     # For a large tender (159 chunks here) that is the single biggest speedup:
-    # while one chunk waits on Gemini, others are already in flight. Only the LLM
+    # while one chunk waits on Claude, others are already in flight. Only the LLM
     # calls are parallelised; every DB write below runs back on this one coroutine,
     # so the SQLAlchemy Session stays single-threaded and dedup order is preserved.
     # Results are consumed as they finish (asyncio.as_completed) so the progress

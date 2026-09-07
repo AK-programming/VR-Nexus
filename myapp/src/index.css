@@ -1,6 +1,27 @@
 @import 'tailwindcss';
 
 /*
+ * Registers the `dark:` variant against this app's own theme attribute rather
+ * than Tailwind's default `.dark` class or OS `prefers-color-scheme` - dark
+ * mode here is `data-theme="dark"` stamped on <html> by src/lib/theme.ts (see
+ * the block below), so `dark:` has to key off that same attribute or every
+ * `dark:` utility in the app would silently never match.
+ *
+ * Used sparingly: almost everything is a semantic token (`bg-surface`,
+ * `text-neutral-*`) that already inverts on its own below, with no `dark:`
+ * needed anywhere. The exception is a handful of places that use Tailwind's
+ * static, non-inverting palette (`text-rose-700`, `text-emerald-700`, ...) as
+ * plain status-coloured text with no matching coloured background under it -
+ * fine in light mode against a white card, unreadable in dark mode against a
+ * near-black one. Those get an explicit `dark:text-{colour}-300`-ish override;
+ * everywhere else stays untouched on purpose, because a `bg-rose-50
+ * text-rose-800` chip is a matched, self-contained pair that already carries
+ * its own contrast regardless of what is around it - redefining the palette
+ * tokens themselves instead of doing this would break every one of those.
+ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
  * Tailwind v4 is configured here, in CSS, not in a tailwind.config.js file.
  * Every custom name declared in @theme becomes a utility automatically:
  * --color-brand-500 gives bg-brand-500 / text-brand-500 / border-brand-500,

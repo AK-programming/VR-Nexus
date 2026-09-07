@@ -305,7 +305,11 @@ export function DataTable<T>({
   const bodyCell = 'px-4 py-3 align-middle text-sm text-neutral-700'
 
   return (
-    <div className="w-full overflow-x-auto">
+    /* relative: <caption> and the "Actions" <th> label below are sr-only, and a
+       sr-only element with no positioned ancestor anchors against the document
+       root - escaping this table's own overflow-x-auto and every clip above it,
+       which can quietly grow the whole page's scroll height. */
+    <div className="relative w-full overflow-x-auto">
       <table className="w-full min-w-full border-collapse text-left">
         {/* Visually hidden rather than absent: it is the table's name, not a title —
             the Panel above already shows a heading and repeating it would be noise. */}

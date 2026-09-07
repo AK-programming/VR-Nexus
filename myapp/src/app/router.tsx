@@ -35,10 +35,12 @@ import { DocumentsLayout } from '@/Layout/DocumentsLayout'
 import { TenderAnalysisLayout } from '@/Layout/TenderAnalysisLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { DocumentsOverviewPage } from '@/pages/DocumentsOverviewPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { PdfViewerPage } from '@/pages/PdfViewerPage'
 import { ProcessingPage } from '@/pages/ProcessingPage'
 import { RegisterPage } from '@/pages/RegisterPage'
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { TenderOverviewPage } from '@/pages/TenderOverviewPage'
 import { TenderProcessingPage } from '@/pages/TenderProcessingPage'
 import { TenderReviewPage } from '@/pages/TenderReviewPage'
@@ -69,6 +71,13 @@ export function AppRouter() {
           </RedirectIfAuthenticated>
         }
       />
+
+      {/* Not gated by RedirectIfAuthenticated like the two routes above: a
+          password reset link in an email can land on a browser where an
+          older session is still signed in, and there is no reason to bounce
+          that away from the one screen that can act on it. */}
+      <Route path={ROUTES.forgotPassword} element={<ForgotPasswordPage />} />
+      <Route path={ROUTES.resetPassword} element={<ResetPasswordPage />} />
 
       <Route
         element={

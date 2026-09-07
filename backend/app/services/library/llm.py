@@ -1,21 +1,21 @@
 """Chat client for parsing fallback and metadata auto-tagging.
 
-Uses the `openai` library against a configurable `OPENAI_BASE_URL`, so any
-OpenAI-compatible endpoint works. Every call site must tolerate a None/empty
-return: the LLM is an enhancement, not a dependency. With no key set (or
-LLM_ENABLED=false) the whole pipeline still runs on heuristics alone.
+Talks to Claude via Anthropic's OpenAI-compatible endpoint (`ANTHROPIC_BASE_URL`,
+`ANTHROPIC_MODEL`) using the `openai` client library — the library is just the
+HTTP/SDK plumbing; the provider it is pointed at is always Anthropic. Every
+call site must tolerate a None/empty return: the LLM is an enhancement, not a
+dependency. With no `ANTHROPIC_API_KEY` set (or `LLM_ENABLED=false`) the whole
+pipeline still runs on heuristics alone.
 
-Deliberate deviation from the source copy of this module: it set
-`default_headers={"User-Agent": settings.OPENAI_USER_AGENT}` in order to send
-`claude-cli/1.0.60 (external, cli)` — i.e. to impersonate Anthropic's
-first-party CLI, because the third-party router it pointed at allowlists client
-User-Agents and rejects the SDK default with a 401. That header is not
-reproduced here, and `OPENAI_USER_AGENT` is not a setting on this app. The
-project's own rule, from its .env.example, is "Identify this application; do
-not impersonate another client." Configure `OPENAI_BASE_URL` and `OPENAI_MODEL`
-to whatever provider the team decides on and let the SDK send its own
-User-Agent; if a provider will not serve a request that identifies itself
-honestly, that is a signal about the provider.
+Deliberate deviation from the source copy of this module: it set a
+`default_headers={"User-Agent": ...}` override in order to send
+`claude-cli/1.0.60 (external, cli)` — i.e. to impersonate Anthropic's own
+first-party CLI, because the third-party router it pointed at allowlists
+client User-Agents and rejects the SDK default with a 401. That impersonation
+is not reproduced here: talking to Anthropic directly means there is no
+reseller allowlist to satisfy, so the SDK sends its own honest User-Agent
+unless `ANTHROPIC_USER_AGENT` is explicitly set to override it (see
+`_get_client` below).
 """
 import json
 import logging

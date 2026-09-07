@@ -10,7 +10,7 @@
  *
  * Two modes, one box. **Ask** returns a written answer with the passages it was
  * built from; when the library cannot support the question — or when generation is
- * switched off (no `OPENAI_API_KEY`) — the answer comes back `grounded: false` and
+ * switched off (no `ANTHROPIC_API_KEY`) — the answer comes back `grounded: false` and
  * the retrieved passages are shown anyway, because they are the honest thing to
  * offer. **Find** skips generation and returns the ranked passages directly, which
  * is the truthful capability when there is no LLM configured at all.
@@ -137,7 +137,7 @@ function AskTurn({ turn }: { turn: Extract<Turn, { kind: 'ask' }> }) {
               </p>
               <p className="mt-2">
                 {answer.grounded ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                     <CheckCircleIcon className="size-3.5" />
                     Grounded in your evidence library
                   </span>
@@ -405,7 +405,14 @@ export function AiAssistantPage() {
             </div>
           ) : null}
 
-          <div className="flex items-end gap-2">
+          {/* `relative`: a sr-only label with no positioned ancestor anchors
+              against the document root instead of this row, escaping every
+              overflow-hidden/auto ancestor above it (the chat card, the page's
+              scroll container, DashboardLayout's own h-dvh clip) and quietly
+              growing document.documentElement past the viewport - which made
+              the whole page scrollable, sidebar included. Giving this row its
+              own containing block keeps the label local to it. */}
+          <div className="relative flex items-end gap-2">
             <label className="sr-only" htmlFor="assistant-input">
               {mode === 'ask' ? 'Ask a question' : 'Search the library'}
             </label>

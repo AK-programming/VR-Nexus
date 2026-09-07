@@ -9,14 +9,12 @@ Copied from VR-Nexus-maryam/backend/app/core/config.py with two changes:
 
   - CORS_ORIGINS now includes the Vite dev server on 5173, which is what
     serves the React app in ../myapp during development.
-  - OPENAI_USER_AGENT is gone, and OPENAI_BASE_URL defaults to OpenAI's own
-    endpoint rather than a third-party router. The upstream default was
-    "claude-cli/1.0.60 (external, cli)", sent as a User-Agent override so a
-    reseller's allowlist would accept the call; that header's only function is
-    to present this service as Anthropic's first-party CLI, which it is not.
-    app/services/library/llm.py no longer sends it, so the setting would have
-    no effect here. Point OPENAI_BASE_URL at any OpenAI-compatible endpoint
-    you hold a key for and it works unchanged.
+  - No OPENAI_USER_AGENT field: the upstream default sent
+    "claude-cli/1.0.60 (external, cli)" as a User-Agent override so a
+    third-party reseller's allowlist would accept the call; that header's only
+    function was to present this service as Anthropic's own first-party CLI,
+    which it is not. app/services/library/llm.py sends no User-Agent override,
+    and ANTHROPIC_BASE_URL below points straight at Anthropic's own API.
 """
 from functools import lru_cache
 
@@ -82,8 +80,9 @@ class Settings(BaseSettings):
     ANTHROPIC_EXTRACTION_MODEL: str = "claude-haiku-4-5-20251001"
     # How many tender chunks to extract concurrently. Extraction is one LLM
     # round-trip per chunk; running a few at once is the main speedup for a
-    # large tender. Keep it modest on Gemini's free tier, which rate-limits
-    # requests-per-minute and will 429 (then retry) if this is too high.
+    # large tender. Keep it modest on a lower Anthropic usage tier, which
+    # rate-limits requests-per-minute and will 429 (then retry) if this is
+    # too high.
     EXTRACTION_CONCURRENCY: int = 4
 
     # --- Section 6: Evidence Library chunking + upload limits ---
@@ -109,15 +108,19 @@ class Settings(BaseSettings):
     def max_upload_bytes(self) -> int:
         return self.MAX_UPLOAD_MB * 1024 * 1024
 
-    # --- Support / outbound email ---
-    # When a tender fails, a non-technical user can press "Contact technical
-    # support" on the error log; the backend emails the full error here. SMTP
-    # defaults target Gmail (STARTTLS on 587). To enable sending, set
+    # --- Outbound email (support reports + account emails) ---
+    # Two things share this one SMTP account: when a tender fails, "Contact
+    # technical support" emails the full error to SUPPORT_EMAIL
+    # (services/support_email.py); separately, "Forgot password" emails a
+    # reset link to whichever user requested it (services/account_email.py).
+    # SMTP defaults target Gmail (STARTTLS on 587). To enable sending, set
     # SMTP_USERNAME and SMTP_PASSWORD in backend/.env — for Gmail that PASSWORD
     # must be an App Password (16 chars, no spaces), NOT the account password,
-    # and the account needs 2-Step Verification on. With either credential empty
-    # the endpoint reports "support email is not configured" instead of sending,
-    # and the UI falls back to a plain mailto: link to SUPPORT_EMAIL.
+    # and the account needs 2-Step Verification on. With either credential
+    # empty, smtp_configured is False and both features report "not
+    # configured" instead of sending (the failure-report UI falls back to a
+    # plain mailto: link to SUPPORT_EMAIL; forgot-password just surfaces the
+    # error - there's no equivalent manual fallback for a password reset).
     SUPPORT_EMAIL: str = "engrak2155@gmail.com"
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
@@ -129,13 +132,23 @@ class Settings(BaseSettings):
     SMTP_FROM: str = ""
     SMTP_USE_TLS: bool = True
 
+    # Where the frontend actually runs, so a password-reset email can link
+    # straight to /reset-password?token=... instead of a bare token the user
+    # would have to paste in somewhere. Change this to the deployed origin in
+    # production - a localhost link in a real email helps no one.
+    PASSWORD_RESET_URL_BASE: str = "http://localhost:5173"
+
     @property
     def smtp_from(self) -> str:
         return self.SMTP_FROM or self.SMTP_USERNAME
 
     @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_USERNAME and self.SMTP_PASSWORD)
+
+    @property
     def support_email_configured(self) -> bool:
-        return bool(self.SMTP_USERNAME and self.SMTP_PASSWORD and self.SUPPORT_EMAIL)
+        return self.smtp_configured and bool(self.SUPPORT_EMAIL)
 
     # --- App ---
     ENVIRONMENT: str = "development"

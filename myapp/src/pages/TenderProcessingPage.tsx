@@ -454,7 +454,7 @@ function TenderErrorLog({
 
       {failures.length === 0 ? (
         <p className="flex items-start gap-2 px-4 py-4 text-xs leading-relaxed text-neutral-500">
-          <CheckCircleIcon className="mt-px size-3.5 shrink-0 text-emerald-600" />
+          <CheckCircleIcon className="mt-px size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
           <span>
             Nothing has failed in the last 24 hours. Older failures live on their
             tender's row in{' '}
@@ -905,7 +905,7 @@ export function TenderProcessingPage() {
 
           {running === 0 ? (
             <p className="flex items-start gap-2 border-t border-hairline px-4 py-3 text-xs leading-relaxed text-neutral-500">
-              <CheckCircleIcon className="mt-px size-3.5 shrink-0 text-emerald-600" />
+              <CheckCircleIcon className="mt-px size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <span>
                 No tender is being analysed right now.{' '}
                 <Link

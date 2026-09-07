@@ -46,7 +46,11 @@ export function Checkbox({
 
   return (
     <div>
-      <div className="flex items-start gap-3">
+      {/* relative: the sr-only input below needs a containing block of its
+          own. Without one it positions against the document root instead of
+          this row, which can escape a distant ancestor's overflow clipping and
+          quietly grow the whole page's scroll height. */}
+      <div className="relative flex items-start gap-3">
         <input
           id={inputId}
           type="checkbox"

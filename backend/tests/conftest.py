@@ -61,12 +61,13 @@ _TMP_STORAGE = tempfile.mkdtemp(prefix="evidence_test_")
 os.environ.setdefault("STORAGE_ROOT", _TMP_STORAGE)
 os.environ.setdefault("LIBRARY_STORAGE_DIR", _TMP_STORAGE)
 
-# LLM off, and no key, so nothing can reach a provider even if a test forgets to
+# LLM off, and no key, so nothing can reach Anthropic even if a test forgets to
 # stub. Environment variables take precedence over the dotenv file in
 # pydantic-settings, so these win over whatever backend/.env happens to hold —
 # which is the point: the suite must behave identically on a developer machine
-# with a configured .env and on a clean checkout without one.
-os.environ.setdefault("OPENAI_API_KEY", "")
+# with a configured .env (and a real ANTHROPIC_API_KEY in their shell) and on a
+# clean checkout without one.
+os.environ.setdefault("ANTHROPIC_API_KEY", "")
 os.environ.setdefault("LLM_ENABLED", "false")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))

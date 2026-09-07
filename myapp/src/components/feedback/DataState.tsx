@@ -29,7 +29,10 @@ import { AlertTriangleIcon, SignalOffIcon } from '@/components/ui/icons'
  */
 export function LoadingRows({ rows = 5, label }: { rows?: number; label: string }) {
   return (
-    <div className="px-5 py-4">
+    /* relative: the sr-only status line below needs a containing block of its
+       own, or it anchors against the document root and can escape every
+       overflow clip between here and <html> while a page is loading. */
+    <div className="relative px-5 py-4">
       <p role="status" className="sr-only">
         {label}
       </p>

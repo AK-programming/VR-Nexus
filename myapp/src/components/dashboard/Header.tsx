@@ -271,7 +271,7 @@ function NotificationsMenu() {
       if (t.status === 'ready_for_review') {
         out.push({
           id: `t-ready-${t.id}`,
-          icon: <CheckCircleIcon className="size-4 text-emerald-600" />,
+          icon: <CheckCircleIcon className="size-4 text-emerald-600 dark:text-emerald-400" />,
           text: `Ready for review — ${tenderTitle(t)}`,
           at: t.failed_at ?? t.created_at,
           to: tenderDetailPath(t.id),
@@ -279,7 +279,7 @@ function NotificationsMenu() {
       } else if (t.status === 'failed') {
         out.push({
           id: `t-failed-${t.id}`,
-          icon: <XCircleIcon className="size-4 text-rose-500" />,
+          icon: <XCircleIcon className="size-4 text-rose-500 dark:text-rose-400" />,
           text: `Analysis failed — ${tenderTitle(t)}`,
           at: t.failed_at ?? t.created_at,
           to: ROUTES.tenderProcessing,
@@ -427,10 +427,14 @@ export function Header({ onOpenSidebar, menuButtonRef }: HeaderProps) {
       <HeaderSearch />
 
       <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+        {/* `relative` in the class list below: the "New Analysis" label collapses
+            to sr-only under sm, and a sr-only element with no positioned ancestor
+            anchors against the document root instead of this link - which can grow
+            the whole page's scroll height on a narrow viewport. */}
         <Link
           to={ROUTES.tenderAnalysis}
           className={[
-            'flex h-10 items-center justify-center gap-2 rounded-xl px-3 sm:px-4',
+            'relative flex h-10 items-center justify-center gap-2 rounded-xl px-3 sm:px-4',
             'font-display text-sm font-semibold tracking-tight',
             'transition-all duration-200',
             BRAND_SURFACE,

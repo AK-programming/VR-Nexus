@@ -9,8 +9,9 @@
  *
  * Every route here is authenticated: `apiClient` attaches the bearer token to
  * everything it sends, so nothing in this file thinks about auth — except the
- * progress WebSocket, which a browser cannot put a header on and so takes the
- * token as a query parameter instead (see `tenderProgressUrl`).
+ * progress WebSocket, which a browser cannot put a header on. It authenticates
+ * with a short-lived, single-use ticket instead of the access token itself
+ * (see `mintTenderWsTicket` and `tenderProgressUrl`).
  *
  * Nothing here catches. `apiClient` already unwraps FastAPI's error shapes into
  * an `ApiError` with a readable `.message` and a `.status`; a caller that wants a
@@ -257,22 +258,40 @@ export function reprocessTender(tenderId: string, options: CallOptions = {}): Pr
 /* -------------------------------------------------------------------------- */
 
 /**
- * The tender progress socket: `/ws/tenders/{id}/progress?token=<access_token>`.
+ * `POST /api/tenders/{id}/ws-ticket` — mints a short-lived (60s), single-use
+ * ticket for the progress socket below. Call this right before opening the
+ * WebSocket, then pass the ticket straight to `tenderProgressUrl`; minting one
+ * and holding onto it doesn't help, since it expires almost immediately and
+ * can only ever be redeemed once.
+ *
+ * This is a normal authenticated POST, so `apiClient` attaches the real
+ * bearer token the ordinary way — the whole point is to keep that token out
+ * of the WebSocket URL that follows.
+ */
+export function mintTenderWsTicket(tenderId: string, options: CallOptions = {}): Promise<string> {
+  return api
+    .postEmpty<{ ticket: string }>(`${BASE}/${tenderId}/ws-ticket`, options)
+    .then((res) => res.ticket)
+}
+
+/**
+ * The tender progress socket: `/ws/tenders/{id}/progress?ticket=<ticket>`.
  *
  * Not under `/api` — it is mounted at the root, so prefixing it with BASE gives a
- * 404 that looks like a broken socket. Unlike the library socket, this one
- * REQUIRES the access token: a browser cannot set an Authorization header on a
- * `WebSocket`, so the server reads the same JWT from a `token` query parameter
- * and closes the connection with 1008 if it is missing or invalid. The caller
- * passes the current token (read from the auth store at connect time); when it is
- * null the connection will be refused and the hook falls back to polling.
+ * 404 that looks like a broken socket. This one REQUIRES a ticket: a browser
+ * cannot set an Authorization header on a `WebSocket`, so the server redeems a
+ * one-shot ticket (minted a moment earlier via `mintTenderWsTicket`) from a
+ * `ticket` query parameter and closes the connection with 1008 if it is
+ * missing, expired, already used, or was minted for a different tender. The
+ * caller passes the ticket it just minted; when it is null the connection will
+ * be refused and the hook falls back to polling.
  *
  * On connect the server replays the latest progress from Redis immediately, so a
  * reconnect mid-run is caught up rather than staring at a blank bar.
  */
-export function tenderProgressUrl(tenderId: string, token: string | null): string {
+export function tenderProgressUrl(tenderId: string, ticket: string | null): string {
   const base = websocketUrl(`/ws/tenders/${tenderId}/progress`)
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base
+  return ticket ? `${base}?ticket=${encodeURIComponent(ticket)}` : base
 }
 
 /**

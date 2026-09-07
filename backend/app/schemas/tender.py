@@ -23,6 +23,17 @@ from app.models.enums import (
 )
 
 
+class WsTicketOut(BaseModel):
+    """A short-lived, single-use ticket for the tender progress WebSocket.
+
+    Minted over this ordinary authenticated HTTP call and handed to the
+    socket as `?ticket=` instead of the real access token - see
+    app/services/ws_tickets.py for why.
+    """
+
+    ticket: str
+
+
 class TenderChunkOut(BaseModel):
     chunk_index: int
     section: str

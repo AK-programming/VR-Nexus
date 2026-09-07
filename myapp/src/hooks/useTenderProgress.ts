@@ -10,12 +10,13 @@
  *
  * Three things this socket does differently from the library's, all handled here:
  *
- *  1. **It needs the access token.** A browser cannot put an Authorization header
- *     on a `WebSocket`, so the token rides in the query string (see
- *     `tenderProgressUrl`). It is read from the auth store once, at connect time,
- *     not subscribed to — a token refresh mid-run must not tear the socket down
- *     and rebuild it, and the server only checks the token when the connection
- *     opens.
+ *  1. **It needs a ticket.** A browser cannot put an Authorization header on a
+ *     `WebSocket`, so a short-lived, single-use ticket is minted over an
+ *     ordinary authenticated POST (`mintTenderWsTicket`) and rides in the query
+ *     string instead (see `tenderProgressUrl`). That mint happens once per
+ *     connection attempt, right before opening the socket - never in response
+ *     to an access-token refresh, which must not tear the socket down and
+ *     rebuild it.
  *  2. **`ready_for_review` is not the end.** The pipeline pauses there for a human,
  *     but the socket stays open — the true terminal states are `finalized` and
  *     `failed` (`isSocketTerminal`). So a live socket sitting at `ready_for_review`
@@ -41,8 +42,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { useAuthStore } from '@/store/authStore'
-import { getTender, tenderProgressUrl } from '@/services/tenderService'
+import { getTender, mintTenderWsTicket, tenderProgressUrl } from '@/services/tenderService'
 import {
   IN_FLIGHT_STATUSES,
   PIPELINE_STAGES,
@@ -199,115 +199,138 @@ export function useTenderProgress(
       pollTimer = window.setInterval(() => void tick(), POLL_INTERVAL_MS)
     }
 
-    /* Read the token once, here, rather than subscribing to it: the server only
-       validates it at connect, and a refresh must not remount the socket. When it
-       is null the connection will be refused and onerror drops us straight to
-       polling, which goes through apiClient and refreshes on its own. */
-    const token = useAuthStore.getState().accessToken
-
-    try {
-      socket = new WebSocket(tenderProgressUrl(tenderId, token))
-    } catch {
-      /* A malformed URL throws synchronously rather than firing onerror. */
-      startPolling()
-      return () => {
-        cancelled = true
-        controller.abort()
-        stopPolling()
-      }
-    }
-
-    socket.onopen = () => {
-      if (!cancelled) {
-        setConnection('live')
-      }
-    }
-
-    socket.onmessage = (event) => {
-      let payload: unknown
-
-      try {
-        payload = JSON.parse(String(event.data))
-      } catch {
-        /* Not JSON. Nothing sensible to do, and throwing here would kill the socket
-           over a stray frame. */
-        return
+    /* Wiring the socket's event handlers is pulled out into its own function so
+       both the normal path and the "ticket mint failed" path below can bail out
+       through the exact same startPolling() without duplicating the handler
+       bodies. */
+    function attachHandlers(ws: WebSocket) {
+      ws.onopen = () => {
+        if (!cancelled) {
+          setConnection('live')
+        }
       }
 
-      if (typeof payload !== 'object' || payload === null) {
-        return
-      }
+      ws.onmessage = (event) => {
+        let payload: unknown
 
-      const frame = payload as Partial<TenderProgressFrame> & { error?: string }
+        try {
+          payload = JSON.parse(String(event.data))
+        } catch {
+          /* Not JSON. Nothing sensible to do, and throwing here would kill the socket
+             over a stray frame. */
+          return
+        }
 
-      if (frame.error) {
-        /* The server telling us its own pub/sub is down. The socket is about to
-           close; polling reads straight from Postgres and still works. (The tender
-           socket does not send keepalive pings, so there is no ping frame to filter
-           out the way the library socket needs.) */
-        socket?.close()
-        startPolling()
-        return
-      }
+        if (typeof payload !== 'object' || payload === null) {
+          return
+        }
 
-      if (!frame.status || !frame.tender_id) {
-        return
-      }
+        const frame = payload as Partial<TenderProgressFrame> & { error?: string }
 
-      /* Fill the frame out to the full shape `progressFromFrame` expects. The
-         contract guarantees every field, but a step label derived from the status
-         is a safe fallback that keeps the status line from going blank, and the
-         client's clock is the only honest timestamp when the frame omits one. */
-      const status = frame.status
-      record(
-        status,
-        progressFromFrame({
-          tender_id: frame.tender_id,
+        if (frame.error) {
+          /* The server telling us its own pub/sub is down. The socket is about to
+             close; polling reads straight from Postgres and still works. (The tender
+             socket does not send keepalive pings, so there is no ping frame to filter
+             out the way the library socket needs.) */
+          ws.close()
+          startPolling()
+          return
+        }
+
+        if (!frame.status || !frame.tender_id) {
+          return
+        }
+
+        /* Fill the frame out to the full shape `progressFromFrame` expects. The
+           contract guarantees every field, but a step label derived from the status
+           is a safe fallback that keeps the status line from going blank, and the
+           client's clock is the only honest timestamp when the frame omits one. */
+        const status = frame.status
+        record(
           status,
-          step_label:
-            frame.step_label ||
-            STAGE_LABELS[status as PipelineStage] ||
-            TENDER_STATUS_LABELS[status],
-          current_step: frame.current_step ?? 0,
-          total_steps: frame.total_steps ?? PIPELINE_STAGES.length,
-          percent_complete: frame.percent_complete ?? 0,
-          message: frame.message ?? null,
-          extracted_requirements_count: frame.extracted_requirements_count ?? null,
-          updated_at: frame.updated_at ?? new Date().toISOString(),
-        }),
-      )
+          progressFromFrame({
+            tender_id: frame.tender_id,
+            status,
+            step_label:
+              frame.step_label ||
+              STAGE_LABELS[status as PipelineStage] ||
+              TENDER_STATUS_LABELS[status],
+            current_step: frame.current_step ?? 0,
+            total_steps: frame.total_steps ?? PIPELINE_STAGES.length,
+            percent_complete: frame.percent_complete ?? 0,
+            message: frame.message ?? null,
+            extracted_requirements_count: frame.extracted_requirements_count ?? null,
+            updated_at: frame.updated_at ?? new Date().toISOString(),
+          }),
+        )
 
-      if (isSocketTerminal(status)) {
-        setConnection('closed')
+        if (isSocketTerminal(status)) {
+          setConnection('closed')
+        }
+      }
+
+      ws.onerror = () => {
+        /* Fires before onclose when the handshake fails - no backend, wrong port, a
+           rejected or already-redeemed ticket, a proxy that will not upgrade. All of
+           them mean: stop waiting, start polling. */
+        startPolling()
+      }
+
+      ws.onclose = () => {
+        if (cancelled) {
+          return
+        }
+
+        /* A close after a socket-terminal state is the server signing off. Any other
+           close is a connection we still need, so fall back rather than go quiet.
+
+           The check is a plain variable, not a `setConnection` updater: an updater
+           must be pure, and React invokes it twice under StrictMode - starting a poll
+           from inside one would leave a second interval running with no handle to
+           clear it. */
+        if (terminalSeen) {
+          setConnection('closed')
+          return
+        }
+
+        startPolling()
       }
     }
 
-    socket.onerror = () => {
-      /* Fires before onclose when the handshake fails — no backend, wrong port, a
-         rejected token, a proxy that will not upgrade. All of them mean: stop
-         waiting, start polling. */
-      startPolling()
-    }
+    /* Opening the socket now needs an HTTP round trip first (minting the ticket),
+       so the whole thing is async - unlike before, when `new WebSocket(...)` could
+       happen synchronously inside the effect. `cancelled` is checked again right
+       after the mint resolves: if the effect was cleaned up while that request was
+       in flight (tenderId changed, the component unmounted), the ticket is simply
+       left to expire unused (it is single-use and dies in 60s on its own) rather
+       than opening a socket nothing will ever close. */
+    async function connect() {
+      let ticket: string
+      try {
+        ticket = await mintTenderWsTicket(tenderId!, { signal: controller.signal })
+      } catch {
+        if (!cancelled) {
+          startPolling()
+        }
+        return
+      }
 
-    socket.onclose = () => {
       if (cancelled) {
         return
       }
 
-      /* A close after a socket-terminal state is the server signing off. Any other
-         close is a connection we still need, so fall back rather than go quiet.
-
-         The check is a plain variable, not a `setConnection` updater: an updater
-         must be pure, and React invokes it twice under StrictMode — starting a poll
-         from inside one would leave a second interval running with no handle to
-         clear it. */
-      if (terminalSeen) {
-        setConnection('closed')
+      try {
+        socket = new WebSocket(tenderProgressUrl(tenderId!, ticket))
+      } catch {
+        /* A malformed URL throws synchronously rather than firing onerror. */
+        startPolling()
         return
       }
 
-      startPolling()
+      attachHandlers(socket)
     }
+
+    void connect()
 
     return () => {
       cancelled = true

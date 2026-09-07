@@ -16,6 +16,8 @@ export const ROUTES = {
   home: '/',
   login: '/login',
   register: '/register',
+  forgotPassword: '/forgot-password',
+  resetPassword: '/reset-password',
 
   tenderAnalysis: '/tender-analysis',
   /** Where a tender is added. `/tender-analysis` itself is the listing. */

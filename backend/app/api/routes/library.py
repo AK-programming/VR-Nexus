@@ -38,9 +38,11 @@ from app.schemas.library import (
     TrainRequest,
     TrainResponse,
     UploadResponse,
+    WsTicketOut,
 )
 from app.services.library import rag, search, storage
 from app.services.library.parsers import extract as extract_mod
+from app.services.ws_tickets import issue_ticket
 from app.tasks import library_indexing as indexing
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,13 @@ def _file_type_of(filename: str) -> DocumentFileType:
 
 
 def _get_document(db: Session, document_id: uuid.UUID) -> Document:
+    """Fetch a library document by id - deliberately with no owner check.
+
+    Same intentional trust boundary as _get_tender in routes/tenders.py: the
+    Evidence Library is shared across the whole sales team on purpose, so
+    `uploaded_by` is attribution, not an access-control column. If that ever
+    needs to change, this is the one place to add the check.
+    """
     document = db.get(Document, document_id)
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
@@ -243,6 +252,13 @@ def train(
     skipped: list[uuid.UUID] = []
 
     for document in documents:
+        document = db.execute(
+            select(Document)
+            .where(Document.id == document.id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if document is None:
+            continue
         if document.training_status == DocumentTrainingStatus.INDEXED and not force:
             skipped.append(document.id)
             continue
@@ -275,6 +291,13 @@ def retrain(
     Its own chunks are replaced; no other document is touched.
     """
     document = _get_document(db, document_id)
+    document = db.execute(
+        select(Document)
+        .where(Document.id == document_id)
+        .with_for_update()
+    ).scalar_one_or_none()
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
     if document.training_status in _IN_FLIGHT:
         raise HTTPException(status.HTTP_409_CONFLICT, "This document is already being indexed.")
 
@@ -409,6 +432,26 @@ def get_job(
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
     return JobOut.model_validate(job)
+
+
+@router.post("/jobs/{job_id}/ws-ticket", response_model=WsTicketOut)
+def create_job_ws_ticket(
+    job_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WsTicketOut:
+    """Mint a one-shot ticket for /ws/library/{job_id}.
+
+    Called over a normal authenticated fetch() right before opening the
+    socket - see app/services/ws_tickets.py for why this exists instead of
+    the socket taking a credential (or, as before, no credential at all)
+    directly in its URL.
+    """
+    job = db.get(IndexJob, job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
+    ticket = issue_ticket(user.id, "library", str(job_id))
+    return WsTicketOut(ticket=ticket)
 
 
 @router.get("/documents/{document_id}/jobs", response_model=list[JobOut])

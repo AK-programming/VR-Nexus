@@ -15,6 +15,11 @@
  *     and closes; a proxy or a dropped network closes without saying anything. Either
  *     way the answer is the same — poll `GET /jobs/{id}` every two seconds, which the
  *     backend supports precisely so a socket is never load-bearing.
+ *  4. **A ticket, not a bare connection.** This socket used to accept any connection
+ *     with no credential at all. It now requires a short-lived, single-use ticket
+ *     minted over an ordinary authenticated POST (`mintJobWsTicket`) right before the
+ *     socket opens - the same shape the tender progress socket already used, see
+ *     `jobProgressUrl`.
  *
  * It also tracks something the API does not store: **which stage a job died on**. A
  * failed job's `stage` is `failed`, and the step it was running is gone. Watching the
@@ -28,7 +33,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { getJob, jobProgressUrl } from '@/services/documentService'
+import { getJob, jobProgressUrl, mintJobWsTicket } from '@/services/documentService'
 import { isTerminalStage } from '@/models/documents'
 import type { IndexJob, ProgressEvent, TimelineStage } from '@/models/documents'
 
@@ -162,103 +167,133 @@ export function useJobProgress(jobId: string | null, options: UseJobProgressOpti
       }
     }
 
-    try {
-      socket = new WebSocket(jobProgressUrl(jobId))
-    } catch {
-      /* A malformed URL throws synchronously rather than firing onerror. */
-      startPolling()
-      return () => {
-        cancelled = true
-        controller.abort()
-        stopPolling()
-      }
-    }
-
-    socket.onopen = () => {
-      if (!cancelled) {
-        setConnection('live')
-      }
-    }
-
-    socket.onmessage = (event) => {
-      let payload: unknown
-
-      try {
-        payload = JSON.parse(String(event.data))
-      } catch {
-        /* Not JSON. Nothing sensible to do with it, and throwing here would kill the
-           socket over a stray frame. */
-        return
+    /* Wiring the socket's event handlers is pulled out into its own function so
+       both the normal path and the "ticket mint failed" path below can bail out
+       through the exact same startPolling() without duplicating the handler
+       bodies. */
+    function attachHandlers(ws: WebSocket) {
+      ws.onopen = () => {
+        if (!cancelled) {
+          setConnection('live')
+        }
       }
 
-      if (typeof payload !== 'object' || payload === null) {
-        return
+      ws.onmessage = (event) => {
+        let payload: unknown
+
+        try {
+          payload = JSON.parse(String(event.data))
+        } catch {
+          /* Not JSON. Nothing sensible to do with it, and throwing here would kill the
+             socket over a stray frame. */
+          return
+        }
+
+        if (typeof payload !== 'object' || payload === null) {
+          return
+        }
+
+        const frame = payload as Partial<ProgressEvent> & { type?: string; error?: string }
+
+        if (frame.type === 'ping') {
+          return
+        }
+
+        if (frame.error) {
+          /* The server telling us its own pub/sub is down. The socket is about to close;
+             polling reads straight from Postgres and still works. */
+          ws.close()
+          startPolling()
+          return
+        }
+
+        if (!frame.stage || !frame.job_id) {
+          return
+        }
+
+        record(frame.stage, {
+          id: frame.job_id,
+          document_id: frame.document_id ?? '',
+          stage: frame.stage,
+          progress: frame.progress ?? 0,
+          /* `''`, not `null`. `index_jobs.message` is `nullable=False, default=""` and
+             `JobOut.message` is a plain `str`, so the field is never null on the wire and
+             `IndexJob.message` is typed `string` to match. A `null` here would not just be
+             a lie about the contract, it would fail the build. */
+          message: frame.message ?? '',
+          /* The socket frame carries no timestamp. This is the moment the client saw the
+             event, which is close enough for a relative "updated 3s ago" and is the only
+             honest value available — the row's real `updated_at` arrives with the next
+             poll or refetch. */
+          updated_at: new Date().toISOString(),
+        })
+
+        if (isTerminalStage(frame.stage)) {
+          setConnection('closed')
+        }
       }
 
-      const frame = payload as Partial<ProgressEvent> & { type?: string; error?: string }
-
-      if (frame.type === 'ping') {
-        return
-      }
-
-      if (frame.error) {
-        /* The server telling us its own pub/sub is down. The socket is about to close;
-           polling reads straight from Postgres and still works. */
-        socket?.close()
+      ws.onerror = () => {
+        /* Fires before onclose when the handshake fails - no backend, wrong port, a
+           rejected or already-redeemed ticket, a proxy that will not upgrade. All of
+           them mean: stop waiting, start polling. */
         startPolling()
-        return
       }
 
-      if (!frame.stage || !frame.job_id) {
-        return
-      }
+      ws.onclose = () => {
+        if (cancelled) {
+          return
+        }
 
-      record(frame.stage, {
-        id: frame.job_id,
-        document_id: frame.document_id ?? '',
-        stage: frame.stage,
-        progress: frame.progress ?? 0,
-        /* `''`, not `null`. `index_jobs.message` is `nullable=False, default=""` and
-           `JobOut.message` is a plain `str`, so the field is never null on the wire and
-           `IndexJob.message` is typed `string` to match. A `null` here would not just be
-           a lie about the contract, it would fail the build. */
-        message: frame.message ?? '',
-        /* The socket frame carries no timestamp. This is the moment the client saw the
-           event, which is close enough for a relative "updated 3s ago" and is the only
-           honest value available — the row's real `updated_at` arrives with the next
-           poll or refetch. */
-        updated_at: new Date().toISOString(),
-      })
+        /* A close after a terminal stage is the server signing off politely. Any other
+           close is a connection we still need, so fall back rather than go quiet.
 
-      if (isTerminalStage(frame.stage)) {
-        setConnection('closed')
+           The check is a plain variable, not a `setConnection` updater: an updater must
+           be pure, and React invokes it twice under StrictMode — starting a poll from
+           inside one would leave a second interval running with no handle to clear it. */
+        if (terminalSeen) {
+          setConnection('closed')
+          return
+        }
+
+        startPolling()
       }
     }
 
-    socket.onerror = () => {
-      /* Fires before onclose when the handshake fails — no backend, wrong port, a
-         proxy that will not upgrade. All of them mean: stop waiting, start polling. */
-      startPolling()
-    }
+    /* Opening the socket now needs an HTTP round trip first (minting the ticket),
+       so the whole thing is async - unlike before, when `new WebSocket(...)` could
+       happen synchronously inside the effect. `cancelled` is checked again right
+       after the mint resolves: if the effect was cleaned up while that request was
+       in flight (jobId changed, the component unmounted), the ticket is simply left
+       to expire unused (it is single-use and dies in 60s on its own) rather than
+       opening a socket nothing will ever close. */
+    async function connect() {
+      let ticket: string
+      try {
+        ticket = await mintJobWsTicket(jobId!, { signal: controller.signal })
+      } catch {
+        if (!cancelled) {
+          startPolling()
+        }
+        return
+      }
 
-    socket.onclose = () => {
       if (cancelled) {
         return
       }
 
-      /* A close after a terminal stage is the server signing off politely. Any other
-         close is a connection we still need, so fall back rather than go quiet.
-
-         The check is a plain variable, not a `setConnection` updater: an updater must
-         be pure, and React invokes it twice under StrictMode — starting a poll from
-         inside one would leave a second interval running with no handle to clear it. */
-      if (terminalSeen) {
-        setConnection('closed')
+      try {
+        socket = new WebSocket(jobProgressUrl(jobId!, ticket))
+      } catch {
+        /* A malformed URL throws synchronously rather than firing onerror. */
+        startPolling()
         return
       }
 
-      startPolling()
+      attachHandlers(socket)
     }
+
+    void connect()
 
     return () => {
       cancelled = true

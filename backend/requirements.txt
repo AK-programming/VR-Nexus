@@ -71,9 +71,13 @@ tiktoken==0.8.0
 # vector(768) columns. Changing the model means a migration.
 fastembed==0.5.1
 
-# --- LLM clients ------------------------------------------------------------
-# openai: optional fallback for Evidence Library parsing + auto-tagging. Inert
-# unless OPENAI_API_KEY is set (see Settings.llm_available).
+# --- LLM client --------------------------------------------------------------
+# openai: the HTTP/SDK client used to talk to Claude, through Anthropic's
+# OpenAI-compatible endpoint (see app/services/library/llm.py and
+# app/services/extraction.py) - not a second provider, just the library that
+# happens to speak that wire format. Both call sites are inert unless
+# ANTHROPIC_API_KEY is set (see Settings.llm_available); with it unset, library
+# parsing/auto-tagging fall back to heuristics and tender extraction cannot run.
 openai==1.59.6
 
 # --- Tests ------------------------------------------------------------------

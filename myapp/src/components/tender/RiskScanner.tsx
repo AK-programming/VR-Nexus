@@ -177,10 +177,10 @@ export function RiskScanner({ requirements }: Props) {
   const overallRisk = highCount > 3 ? 'High' : highCount > 0 || mediumCount > 5 ? 'Medium' : 'Low'
   const overallColour =
     overallRisk === 'High'
-      ? 'text-rose-700'
+      ? 'text-rose-700 dark:text-rose-300'
       : overallRisk === 'Medium'
-        ? 'text-amber-700'
-        : 'text-emerald-700'
+        ? 'text-amber-700 dark:text-amber-300'
+        : 'text-emerald-700 dark:text-emerald-300'
 
   return (
     <div className="flex flex-col gap-6">
@@ -194,19 +194,19 @@ export function RiskScanner({ requirements }: Props) {
         </div>
         <div className="rounded-2xl border border-hairline bg-surface p-4 shadow-sm">
           <p className="text-xs font-medium text-neutral-500">High Risk</p>
-          <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-rose-700">
+          <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-rose-700 dark:text-rose-300">
             {highCount}
           </p>
         </div>
         <div className="rounded-2xl border border-hairline bg-surface p-4 shadow-sm">
           <p className="text-xs font-medium text-neutral-500">Medium Risk</p>
-          <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-amber-700">
+          <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-amber-700 dark:text-amber-300">
             {mediumCount}
           </p>
         </div>
         <div className="rounded-2xl border border-hairline bg-surface p-4 shadow-sm">
           <p className="text-xs font-medium text-neutral-500">Low Risk</p>
-          <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-sky-700">
+          <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-sky-700 dark:text-sky-300">
             {lowCount}
           </p>
         </div>

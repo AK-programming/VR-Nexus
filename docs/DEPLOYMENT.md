@@ -49,27 +49,34 @@ emergency response if it ever leaks).
 
 ### Language-model configuration
 
-VR-Nexus runs on a **single LLM provider: Google Gemini**, through Gemini's
+VR-Nexus runs on a **single LLM provider: Anthropic Claude**, through Anthropic's
 OpenAI-compatible endpoint. One key powers everything that generates text — both
 tender requirement extraction (Stage 2 of the pipeline) and the Evidence Library
 assistant (`/api/library/ask`) and auto-tagging:
 
 ```
-OPENAI_API_KEY=<your Gemini API key>
-OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
-OPENAI_MODEL=gemini-3.6-flash
+ANTHROPIC_API_KEY=<your Claude API key>
+ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/
+ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+ANTHROPIC_EXTRACTION_MODEL=claude-haiku-4-5-20251001
 LLM_ENABLED=true
 ```
 
-There is no Anthropic key and no second provider. Embeddings are separate and
-run **locally** through `fastembed` (no key, no network) — this Gemini key is not
-used for them, so the Evidence Library indexes and searches with or without it.
+`ANTHROPIC_MODEL` (Sonnet) is the reasoning model, used only for the Evidence
+Library's grounded Ask; `ANTHROPIC_EXTRACTION_MODEL` (Haiku) is the cheaper model
+used for the high-volume, mechanical calls - tender extraction and library
+auto-tagging. Same key for both.
 
-With `OPENAI_API_KEY` empty (or `LLM_ENABLED=false`): library indexing and search
-still work, and the assistant's **Find** mode plus the `sources` on **Ask** still
-return passages straight from the vector index — but generated answers are
-disabled and **tender extraction cannot run**, so set the key before analysing a
-tender.
+There is no Gemini key, no OpenAI key, and no second provider. Embeddings are
+separate and run **locally** through `fastembed` (no key, no network) — this
+Claude key is not used for them (Anthropic has no embeddings endpoint), so the
+Evidence Library indexes and searches with or without it.
+
+With `ANTHROPIC_API_KEY` empty (or `LLM_ENABLED=false`): library indexing and
+search still work, and the assistant's **Find** mode plus the `sources` on
+**Ask** still return passages straight from the vector index — but generated
+answers are disabled and **tender extraction cannot run**, so set the key before
+analysing a tender.
 
 Keep the root `.env` and `backend/.env` in step: compose reads the root one, and
 a native `uvicorn` run from `backend/` reads `backend/.env`.
@@ -80,16 +87,17 @@ Tender extraction makes one LLM call per ~2000-token chunk, so a large tender is
 many calls. Two settings govern how fast that goes:
 
 - **`EXTRACTION_CONCURRENCY`** (default `4`) — how many chunks are extracted at
-  once. Raise it (8–10) on a paid Gemini tier for more speed; lower it to `2` if
-  the free tier returns `429` / `RESOURCE_EXHAUSTED` a lot. It is the main knob.
+  once. Raise it (8–10) on a higher Anthropic usage tier for more speed; lower it
+  to `2` if a lower tier returns `429` a lot. It is the main knob.
 - A **60-second per-request timeout** is baked into the client so one slow or
   rate-limited call can no longer stall a run (the SDK default was 600s).
 
-The ultimate ceiling is Gemini's requests-per-minute limit on your key: on the
-free tier a big tender still takes a few minutes no matter the concurrency. If
-you see many `429`s in the worker log, either move to a paid tier (then raise
-`EXTRACTION_CONCURRENCY`) or accept the pace. A crashed/restarted worker mid-run
-does not corrupt anything — re-upload the tender to re-extract cleanly.
+The ultimate ceiling is Anthropic's requests-per-minute (and tokens-per-minute)
+limit on your key: on a lower tier a big tender still takes a few minutes no
+matter the concurrency. If you see many `429`s in the worker log, either move to
+a higher usage tier (then raise `EXTRACTION_CONCURRENCY`) or accept the pace. A
+crashed/restarted worker mid-run does not corrupt anything — re-upload the
+tender to re-extract cleanly.
 
 ## TLS / HTTPS
 

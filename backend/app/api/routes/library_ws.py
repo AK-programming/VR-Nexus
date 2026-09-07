@@ -6,6 +6,14 @@ channel and forwards each frame to the browser.
 On connect the current `index_jobs` row is replayed first. Without that, a client
 that reloads mid-run — or connects a moment after Train — would sit on an empty
 progress bar while the job is already at "Generating Embeddings".
+
+Authentication: this socket used to accept any connection with no credential
+at all - anyone who could guess or observe a job id could watch another
+document's indexing progress stream by. It now requires the same kind of
+short-lived, single-use ticket the tender progress socket uses (see
+app.services.ws_tickets and the tender-side /ws/tenders/{id}/progress in
+ws.py), minted a moment earlier over POST /api/library/jobs/{job_id}/ws-ticket
+and passed here as ?ticket=<ticket>.
 """
 from __future__ import annotations
 
@@ -14,12 +22,13 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 
 from app.core.database import SessionLocal
 from app.models import IndexJob
 from app.models.enums import JOB_STAGE_LABELS as STAGE_LABELS, JobStage
 from app.services.library import library_progress as progress
+from app.services.ws_tickets import redeem_ticket
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +62,12 @@ def _snapshot(job_id: uuid.UUID) -> dict | None:
 
 
 @router.websocket("/ws/library/{job_id}")
-async def job_progress(websocket: WebSocket, job_id: uuid.UUID) -> None:
+async def job_progress(websocket: WebSocket, job_id: uuid.UUID, ticket: str | None = None) -> None:
+    user_id = redeem_ticket(ticket, "library", str(job_id)) if ticket else None
+    if user_id is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or missing ticket")
+        return
+
     await websocket.accept()
 
     # One try wraps every send. A client that closes the tab the instant it

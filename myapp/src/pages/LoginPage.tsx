@@ -6,10 +6,9 @@
  * check password length here: an existing password is whatever it is, and holding
  * it to today's rules would lock out anyone whose account predates them.
  *
- * One control on this screen describes a capability the API does not have yet:
- * password reset. It is shown, because people look for it, and it says plainly
- * that it is not self-service rather than failing silently when pressed. A control
- * that looks live and does nothing costs more trust than one that explains itself.
+ * "Forgot password?" is a real link to ForgotPasswordPage now, not a toggled
+ * explainer — the API grew a working reset flow, so the control that used to
+ * say "not self-service yet" would just be lying if it stayed.
  */
 
 import { useState } from 'react'
@@ -24,7 +23,6 @@ import { TextField } from '@/components/ui/TextField'
 import {
   ArrowRightIcon,
   CheckIcon,
-  InfoIcon,
   LockIcon,
   MailIcon,
   ShieldCheckIcon,
@@ -59,7 +57,6 @@ export function LoginPage() {
     remember: false,
   })
   const [errors, setErrors] = useState<FieldErrors>({})
-  const [isResetHelpOpen, setResetHelpOpen] = useState(false)
 
   /**
    * Editing a field clears that field's error and any failure from the last
@@ -191,23 +188,13 @@ export function LoginPage() {
             Keep me signed in
           </Checkbox>
 
-          <button
-            type="button"
-            onClick={() => setResetHelpOpen((open) => !open)}
-            aria-expanded={isResetHelpOpen}
+          <Link
+            to={ROUTES.forgotPassword}
             className="rounded text-sm font-medium text-brand-600 transition-colors hover:text-brand-700 hover:underline"
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
-
-        {isResetHelpOpen ? (
-          <AlertMessage tone="info" icon={<InfoIcon />}>
-            Password resets aren&rsquo;t self-service yet. Ask a VR-Nexus
-            administrator to reset yours, and you&rsquo;ll be able to sign in
-            straight away.
-          </AlertMessage>
-        ) : null}
 
         <Button
           type="submit"

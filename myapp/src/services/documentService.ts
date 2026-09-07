@@ -345,7 +345,24 @@ export async function listProcessingQueue(options: CallOptions = {}): Promise<Qu
 /* -------------------------------------------------------------------------- */
 
 /**
- * Where the progress socket lives: `/ws/library/{job_id}`.
+ * `POST /api/library/jobs/{job_id}/ws-ticket` — mints a short-lived (60s),
+ * single-use ticket for the progress socket below. Call this right before
+ * opening the WebSocket and pass the ticket straight to `jobProgressUrl`;
+ * minting one ahead of time doesn't help, since it expires almost immediately
+ * and can only ever be redeemed once.
+ *
+ * This is a normal authenticated POST, so `apiClient` attaches the real
+ * bearer token the ordinary way — the whole point is to keep the socket
+ * itself from needing (or, as before, entirely lacking) a credential.
+ */
+export function mintJobWsTicket(jobId: string, options: CallOptions = {}): Promise<string> {
+  return api
+    .postEmpty<{ ticket: string }>(`${BASE}/jobs/${jobId}/ws-ticket`, options)
+    .then((res) => res.ticket)
+}
+
+/**
+ * Where the progress socket lives: `/ws/library/{job_id}?ticket=<ticket>`.
  *
  * Note the path is *not* under `/api`. It is mounted at the root, so prefixing it
  * with BASE gives a 404 that looks like a broken WebSocket.
@@ -355,17 +372,18 @@ export async function listProcessingQueue(options: CallOptions = {}): Promise<Qu
  * `{"type":"ping"}` on idle, and `{"error": ...}` followed by a close if Redis is
  * unreachable — at which point the client is expected to poll `getJob`.
  *
- * This socket takes no credential, which is worth knowing rather than leaning on. Every
- * HTTP route under `/api/library` requires a bearer token, and the *tender* progress socket
- * authenticates with `?token=<access_token>` — a query parameter precisely because a
- * browser cannot put a header on a `WebSocket` — but `/ws/library/{job_id}` accepts the
- * connection and starts streaming to anyone holding a job id. That reads as an
- * inconsistency on the backend rather than a decision this file should encode, so nothing
- * is appended here. If the route grows a `token` parameter to match the tender side, this
- * function is the only place that changes.
+ * This socket now REQUIRES a ticket, matching the tender progress socket: it used
+ * to accept any connection with no credential at all, which meant anyone holding
+ * (or guessing) a job id could watch another document's indexing stream. The
+ * server redeems a one-shot ticket (minted a moment earlier via `mintJobWsTicket`)
+ * from a `ticket` query parameter and closes with 1008 if it is missing, expired,
+ * already used, or was minted for a different job. The caller passes the ticket
+ * it just minted; when it is null the connection will be refused and the hook
+ * falls back to polling.
  */
-export function jobProgressUrl(jobId: string): string {
-  return websocketUrl(`/ws/library/${jobId}`)
+export function jobProgressUrl(jobId: string, ticket: string | null): string {
+  const base = websocketUrl(`/ws/library/${jobId}`)
+  return ticket ? `${base}?ticket=${encodeURIComponent(ticket)}` : base
 }
 
 /**

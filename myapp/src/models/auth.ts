@@ -135,6 +135,29 @@ export interface RefreshRequest {
   refresh_token: string
 }
 
+/** POST /api/auth/forgot-password */
+export interface ForgotPasswordRequest {
+  email: string
+}
+
+/**
+ * POST /api/auth/reset-password
+ *
+ * `token` is the opaque value from the emailed reset link's `?token=`
+ * query parameter, not anything this app decodes itself — only the server
+ * that signed it can tell whether it is genuine or has expired.
+ */
+export interface ResetPasswordRequest {
+  token: string
+  new_password: string
+}
+
+/** Backend `MessageOut` - the shape both forgot-password and reset-password
+ * respond with on success. Just a sentence meant to be shown as-is. */
+export interface MessageResponse {
+  message: string
+}
+
 /* -------------------------------------------------------------------------- */
 /* Responses                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -182,13 +205,13 @@ export interface LoginFormValues {
  * accepts.
  *
  * `phone` and `company` are now real — the endpoint takes both and writes them to
- * the user row. `role` is the one field that cannot be honoured: the public
- * endpoint has no `role` at all, so the form explains that admin is granted by an
- * existing administrator rather than pretending to request it. See
- * `toRegisterRequest` for exactly what leaves the browser.
+ * the user row. There is no account-type field here: the public register
+ * endpoint has no `role` at all (every account comes in as a standard user), and
+ * this app does not currently gate anything by role, so asking the sign-up form
+ * to pick one was a choice with no effect. See `toRegisterRequest` for exactly
+ * what leaves the browser.
  */
 export interface RegisterFormValues {
-  role: UserRole
   name: string
   email: string
   phone: string
@@ -204,9 +227,8 @@ export interface RegisterFormValues {
  * are legitimate characters in a password and stripping them would lock people
  * out of accounts they created correctly.
  *
- * `role`, `confirmPassword` and `acceptedTerms` stay in the browser: the first
- * because the server decides it, the other two because they are checks on the
- * form rather than data about the user.
+ * `confirmPassword` and `acceptedTerms` stay in the browser: they are checks on
+ * the form rather than data about the user.
  */
 export function toRegisterRequest(values: RegisterFormValues): RegisterRequest {
   return {

@@ -30,9 +30,10 @@ in the library.
   PostgreSQL 16 + **pgvector**, Pydantic v2. JWT auth (python-jose + passlib/bcrypt).
 - **Frontend**: React 19 + **Vite** (NOT Next.js — the plan said Next, the build is
   Vite; do not migrate), React Router 7, Tailwind CSS 4, Zustand, react-pdf.
-- **LLM**: Google **Gemini** via its OpenAI-compatible endpoint (one key for
+- **LLM**: **Anthropic Claude** via its OpenAI-compatible endpoint (one key for
   everything — see §6). **Embeddings**: local `fastembed` (`BAAI/bge-base-en-v1.5`,
-  768-dim, CPU, no key), stored/searched in pgvector.
+  768-dim, CPU, no key, since Anthropic has no embeddings endpoint), stored/searched
+  in pgvector.
 - **Infra**: Docker Compose (Postgres, Redis, api, worker, flower). Nginx for prod.
 
 ## 3. Repository layout
@@ -56,7 +57,7 @@ vr-nexus-frontend/                 <- THE project root (run everything from here
       schemas/{tender, library}.py
       services/
         chunking.py            <- TENDER chunker (~2000-tok, page-bounded)
-        extraction.py          <- Gemini requirement extraction (Stage 2)
+        extraction.py          <- Claude requirement extraction (Stage 2)
         pdf_extraction.py progress.py tender_storage.py
         library/
           chunking.py          <- LIBRARY chunker (~800-tok) -- DIFFERENT module, same fn name!
@@ -86,7 +87,7 @@ WebSocket (`/ws/tenders/{id}/progress`):
 `uploaded → parsing → chunking → extracting → merging → matching → reporting →
 assembling_folder → ready_for_review` (then terminal `finalized` / `failed`).
 - parse (PyMuPDF, OCR fallback Tesseract) → section-aware ~2000-tok chunks →
-  **extract** (one Gemini call per chunk → strict-JSON requirements, dedup by
+  **extract** (one Claude call per chunk → strict-JSON requirements, dedup by
   clause+desc hash) → **match** each requirement to the library (vector search +
   confidence: AUTO ≥0.85, SUGGESTED 0.50–0.84, else MISSING) → **report** (marks
   captured vs available) → **assemble** Excel + ZIP → pause at `ready_for_review`.
@@ -95,7 +96,7 @@ assembling_folder → ready_for_review` (then terminal `finalized` / `failed`).
 
 **Library indexing pipeline** (`tasks/library_indexing.py`), stages over
 `/ws/library/{job_id}`: `queued → parsing → tagging → embedding → indexed`
-(or `failed`). Parse → chunk (~800-tok) → **tag** (Gemini metadata, has fallback)
+(or `failed`). Parse → chunk (~800-tok) → **tag** (Claude metadata, has fallback)
 → **embed** (local fastembed) → store chunks+vectors+metadata in pgvector.
 
 ## 5. Key endpoints (all JWT-auth; frontend proxies /api and /ws to :8000)
@@ -109,21 +110,27 @@ assembling_folder → ready_for_review` (then terminal `finalized` / `failed`).
   `POST documents/{id}/retrain` · `GET documents[/{id}]` · `GET stats` ·
   `GET jobs/{id}` · `GET search` · `POST ask` (grounded RAG) · `GET documents/{id}/file`.
 
-## 6. LLM / RAG configuration (ONE Gemini key does everything)
+## 6. LLM / RAG configuration (ONE Claude key does everything)
 
 - `.env` (root, used by Docker) and `backend/.env` (used by native uvicorn) must
   agree. Both set:
-  - `OPENAI_API_KEY=<Gemini key>`
-  - `OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/`
-  - `OPENAI_MODEL=gemini-3.6-flash`  (Gemini retires models — bump this when the API
-    returns 404 "model no longer available")
+  - `ANTHROPIC_API_KEY=<your Claude API key>`
+  - `ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/`
+  - `ANTHROPIC_MODEL=claude-sonnet-4-5-20250929`  (the reasoning model - used only
+    for the Evidence Library's grounded Ask)
+  - `ANTHROPIC_EXTRACTION_MODEL=claude-haiku-4-5-20251001`  (cheaper model for the
+    high-volume, mechanical calls - tender extraction and library auto-tagging;
+    bump either model id if Anthropic retires a version and the API starts
+    returning 404 "model not found")
   - `LLM_ENABLED=true`, `EXTRACTION_CONCURRENCY=4`
-- This key powers: tender **extraction**, library **tagging**, and the AI Assistant
-  **Ask**. Embeddings are **local** (fastembed) — no key, first index downloads a
-  ~130 MB model once into the `fastembed_cache` volume.
-- **RAG** = retrieve (local embeddings + pgvector) → generate (Gemini), only in the
+- This one key powers: tender **extraction**, library **tagging**, and the AI
+  Assistant **Ask**. Embeddings are **local** (fastembed) — no key, first index
+  downloads a ~130 MB model once into the `fastembed_cache` volume, since Anthropic
+  has no embeddings endpoint to call for this.
+- **RAG** = retrieve (local embeddings + pgvector) → generate (Claude), only in the
   AI Assistant's Ask and where the tender matcher retrieves evidence.
-- There is **no Anthropic** anymore (removed).
+- **Anthropic is the only LLM provider.** No Gemini, no OpenAI, no third-party
+  router — those were the original plan and have been fully removed.
 
 ## 7. How to run (from `vr-nexus-frontend/`)
 
@@ -152,9 +159,9 @@ frontend at http://localhost:5173. Stop with `docker compose down` (keeps data).
   ZIP with original tender + `Required Documents/` evidence files.
 - **AI Assistant** (`/ai-assistant`): Ask (grounded) + Find, with sources.
 - Auth, RBAC, both pipelines, WebSocket progress, library indexing/search — all working.
-- Single-provider Gemini; extraction runs concurrently with a 60s call timeout, and a
-  user **Stop** halts a running tender (`POST /api/tenders/{id}/cancel` + cooperative
-  cancel in extraction).
+- Single-provider Anthropic Claude; extraction runs concurrently with a 60s call
+  timeout, and a user **Stop** halts a running tender (`POST /api/tenders/{id}/cancel`
+  + cooperative cancel in extraction).
 - **Upload hands off to Processing automatically.** Tender: one press uploads, saves
   the optional details and lands on `/tender-analysis/processing?tender=<id>` (a
   details-save failure travels as a dismissible notice instead of holding the form).
@@ -275,12 +282,14 @@ Rules that matter:
 4. **Windows node_modules.** The working copy's `myapp/node_modules` is a Windows
    install. `tsc`/`eslint` run cross-platform, but the Vite **bundler** and test
    runners must run on the user's machine (`npm install` there first).
-5. **Gemini model name drifts.** When a run 404s with "model no longer available",
-   update `OPENAI_MODEL` in `.env` + `backend/.env` and recreate api+worker.
+5. **Anthropic model id drifts.** When a run 404s with "model not found" (a
+   retired version), update `ANTHROPIC_MODEL`/`ANTHROPIC_EXTRACTION_MODEL` in `.env`
+   + `backend/.env` and recreate api+worker.
 6. **Env picked up at container create**, not restart: after `.env` changes run
    `docker compose up -d --force-recreate api worker` (or `restart worker` for a
    code-only change, since code is source-mounted but Celery doesn't auto-reload).
-7. **Extraction speed** is capped by Gemini's per-key RPM; tune `EXTRACTION_CONCURRENCY`.
+7. **Extraction speed** is capped by Anthropic's per-key RPM/TPM tier; tune
+   `EXTRACTION_CONCURRENCY`.
    - **Dark-mode selection fills:** use `bg-selected` (a theme-aware token in
      `index.css`) for any selected / active / focused / cited fill that carries
      ordinary `text-neutral-*` body text. Do NOT use `bg-brand-50` for those — it
@@ -288,7 +297,7 @@ Rules that matter:
      light-on-light text disappears (the "selected card text invisible in dark
      theme" bug). `bg-brand-50` is fine only for small brand chips/badges whose
      text is brand-coloured (non-inverting).
-8. **Extraction-cause probe:** `GET /api/health/llm` (auth'd) hits Gemini with a
+8. **Extraction-cause probe:** `GET /api/health/llm` (auth'd) hits Anthropic with a
    trivial prompt using the exact URL/auth/model the extraction pipeline uses. It
    returns `{ok, model, base_url, reply|error, status?, response_body?}` — so when
    extraction fails, one curl says *why* without waiting for a full tender to fail
