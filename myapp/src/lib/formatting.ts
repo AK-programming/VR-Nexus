@@ -16,7 +16,7 @@ export function formatShortDate(isoDate: string): string {
   const date = new Date(isoDate)
 
   if (Number.isNaN(date.getTime())) {
-    return '—'
+    return '-'
   }
 
   return date.toLocaleDateString('en-GB', {
@@ -31,7 +31,7 @@ export function formatLongDate(isoDate: string): string {
   const date = new Date(isoDate)
 
   if (Number.isNaN(date.getTime())) {
-    return '—'
+    return '-'
   }
 
   return date.toLocaleDateString('en-GB', {
@@ -53,7 +53,7 @@ export function formatRelativeTime(isoTimestamp: string, now: Date = new Date())
   const then = new Date(isoTimestamp)
 
   if (Number.isNaN(then.getTime())) {
-    return '—'
+    return '-'
   }
 
   const seconds = Math.round((now.getTime() - then.getTime()) / 1000)
@@ -112,7 +112,7 @@ export function formatGigabytes(value: number): string {
  */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) {
-    return '—'
+    return '-'
   }
 
   if (bytes < 1024) {
@@ -147,7 +147,7 @@ export function formatInitials(name: string | null | undefined): string {
   const words = (name ?? '').trim().split(/\s+/).filter(Boolean)
 
   if (words.length === 0) {
-    return '—'
+    return '-'
   }
 
   return words

@@ -65,3 +65,14 @@ export const TENDER_DETAIL_PATTERN = '/tender-analysis/:tenderId'
 export function tenderDetailPath(tenderId: string): string {
   return `/tender-analysis/${tenderId}`
 }
+
+/**
+ * The tender tools workspace needs a tender id, so the same two-export pattern:
+ * \`TENDER_TOOLS_PATTERN\` is the \`:tenderId\` form a \`<Route path>\` matches on,
+ * and \`tenderToolsPath(id)\` is the filled-in URL a \`<Link to>\` navigates to.
+ */
+export const TENDER_TOOLS_PATTERN = '/tender-analysis/:tenderId/tools'
+
+export function tenderToolsPath(tenderId: string): string {
+  return `/tender-analysis/${tenderId}/tools`
+}

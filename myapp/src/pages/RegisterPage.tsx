@@ -101,7 +101,7 @@ function RoleCard({ value, selected, onSelect, icon, title, description }: RoleC
           'flex h-full cursor-pointer gap-3 rounded-xl border p-3.5 transition-colors',
           'peer-focus-visible:ring-4 peer-focus-visible:ring-brand-500/25',
           selected
-            ? 'border-brand-500 bg-brand-50'
+            ? 'border-brand-500 bg-selected'
             : 'border-hairline bg-surface hover:border-brand-300 hover:bg-surface-muted',
         ].join(' ')}
       >
@@ -341,7 +341,7 @@ export function RegisterPage() {
             <div className="mt-3">
               <AlertMessage tone="info" icon={<InfoIcon />}>
                 Your account will be created as a standard user. An existing
-                administrator can promote it to admin once it exists — sign-up
+                administrator can promote it to admin once it exists - sign-up
                 cannot grant admin access to itself.
               </AlertMessage>
             </div>

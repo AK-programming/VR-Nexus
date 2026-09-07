@@ -30,8 +30,15 @@
 #      tender_analysis) so the Docker path and the native-install path describe
 #      the same database instead of two differently-named ones.
 #
-# Host ports are 5432, 6379, 8000 and 5555. myapp/vite.config.ts proxies to
-# 127.0.0.1:8000, so the API port in particular must stay as it is.
+# Host ports are 5434, 6381, 8000 and 5556. myapp/vite.config.ts proxies to
+# 127.0.0.1:8000, so the API port in particular must stay as it is. Postgres,
+# Redis and Flower are remapped off their usual 5432/6379/5555 because other
+# things on this machine already hold those (and their first fallbacks,
+# 5433/6380): a native Windows postgres.exe service on 5433, and another
+# project's containers (evidence_postgres/evidence_redis/evidence_flower) on
+# 5432/6379/5555/6380. Only the host side changes — containers still talk to
+# each other over the default container ports (postgres:5432, redis:6379) via
+# the internal Docker network, so DATABASE_URL/REDIS_URL in .env are unaffected.
 #
 # Note on .env: compose reads ./.env at this directory (repo root) and injects
 # the values as environment variables, which pydantic-settings picks up without
@@ -55,7 +62,7 @@ services:
       # the volume.
       - ./docker/init-extensions.sql:/docker-entrypoint-initdb.d/init-extensions.sql:ro
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5434:5432"
     healthcheck:
       test:
         - CMD-SHELL
@@ -69,7 +76,7 @@ services:
     image: redis:7-alpine
     container_name: vrnexus_redis
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:6381:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -138,7 +145,8 @@ services:
     container_name: vrnexus_flower
     command: celery -A app.celery_app flower --port=5555
     ports:
-      - "127.0.0.1:5555:5555"
+      - "127.0.0.1:5556:5555"
+    # 5556 (not 5555) — see the ports note at the top of this file.
     env_file:
       - .env
     depends_on:

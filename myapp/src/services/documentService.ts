@@ -44,6 +44,8 @@ import type {
   DuplicateCheckResult,
   IndexJob,
   LibraryDocument,
+  LibrarySearchResponse,
+  LibraryAnswer,
   LibraryDocumentDetail,
   LibraryStats,
   StageOption,
@@ -477,3 +479,60 @@ export function releaseObjectUrl(url: string | null | undefined): void {
   }
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* Search & grounded answers                                                  */
+/* -------------------------------------------------------------------------- */
+
+export type LibrarySearchQuery = {
+  category?: DocumentCategory
+  /** Server bounds: 1-50, default 10. */
+  limit?: number
+  /** Drop hits below this cosine similarity. Server bounds: 0-1, default 0. */
+  min_similarity?: number
+}
+
+/**
+ * `GET /api/library/search` — semantic retrieval over the indexed library, no
+ * generation. `q` must be at least two characters (the server 422s a shorter
+ * one); undefined filters are dropped rather than sent empty.
+ */
+export function searchLibrary(
+  q: string,
+  query: LibrarySearchQuery = {},
+  options: CallOptions = {},
+): Promise<LibrarySearchResponse> {
+  const params = new URLSearchParams()
+  params.set('q', q)
+  if (query.category) {
+    params.set('category', query.category)
+  }
+  if (query.limit !== undefined) {
+    params.set('limit', String(query.limit))
+  }
+  if (query.min_similarity !== undefined) {
+    params.set('min_similarity', String(query.min_similarity))
+  }
+  return api.get<LibrarySearchResponse>(`${BASE}/search?${params.toString()}`, options)
+}
+
+export type AskLibraryPayload = {
+  question: string
+  category?: DocumentCategory
+  /** Server bounds: 1-20, default 6. */
+  limit?: number
+}
+
+/**
+ * `POST /api/library/ask` — retrieval-augmented generation over the same index
+ * `searchLibrary` reads. The answer is grounded only in the retrieved passages;
+ * a question the library cannot support comes back with `grounded: false` rather
+ * than an answer from the model's own knowledge. The question must be at least
+ * three characters.
+ */
+export function askLibrary(
+  payload: AskLibraryPayload,
+  options: CallOptions = {},
+): Promise<LibraryAnswer> {
+  return api.postJson<LibraryAnswer>(`${BASE}/ask`, payload, options)
+}

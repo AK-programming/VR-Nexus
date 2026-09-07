@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -347,7 +348,7 @@ def get_report(
     ).scalars().all()
 
     mandatory = optional = unspecified = 0
-    with_evidence = without_evidence = 0
+    with_evidence = without_evidence = not_required = 0
     auto = suggested = missing = accepted = rejected = pending = 0
     marks_available = marks_captured = 0.0
     impact_agg: dict[str, dict] = {}
@@ -360,7 +361,14 @@ def get_report(
         else:
             unspecified += 1
 
-        if r.evidence_matches:
+        # requirements_with_evidence/without_evidence describe requirements the
+        # tender actually asks the bidder to prove. A requirement with
+        # evidence_required=False was never going to carry evidence — counting
+        # it under "without evidence" would just relabel a normal row as
+        # Unmatched. It gets its own bucket instead.
+        if not r.evidence_required:
+            not_required += 1
+        elif r.evidence_matches:
             with_evidence += 1
         else:
             without_evidence += 1
@@ -420,6 +428,7 @@ def get_report(
         pending_matches=pending,
         requirements_with_evidence=with_evidence,
         requirements_without_evidence=without_evidence,
+        requirements_not_required=not_required,
         by_evaluation_impact=by_impact,
         evaluation_weighting=tender.evaluation_weighting,
     )
@@ -526,4 +535,203 @@ def finalize_tender(
         str(tender.id), TenderStatus.FINALIZED,
         percent=100, message="Tender finalized.",
     )
+    return _tender_out(tender)
+
+
+# --------------------------------------------------------------------------- #
+# cancel (stop a running analysis)                                            #
+# --------------------------------------------------------------------------- #
+@router.post("/{tender_id}/cancel", response_model=TenderOut)
+def cancel_tender(
+    tender_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TenderOut:
+    """Stop a tender that is still being analysed.
+
+    Marks the tender FAILED with a "Stopped by user." message and publishes that
+    over the progress socket (terminal, so a watching client stops immediately).
+    The running worker is not killed outright; instead the long extraction stage
+    checks this row every few chunks (see services/extraction.TenderCancelled)
+    and bails when it sees FAILED, so a stuck run actually halts rather than only
+    being relabelled. Only allowed while the tender is still in flight — a tender
+    at ready_for_review, finalized or already failed has nothing to stop.
+    """
+    tender = _get_tender(db, tender_id)
+    settled = (
+        TenderStatus.READY_FOR_REVIEW,
+        TenderStatus.FINALIZED,
+        TenderStatus.FAILED,
+    )
+    if tender.status in settled:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This tender is not running, so there is nothing to stop.",
+        )
+
+    # Read the stage BEFORE overwriting it — this is the one thing a person asking
+    # "how far did it get?" wants, and assigning FAILED first would record "failed"
+    # as the stage it was stopped at, which says nothing.
+    stopped_at = tender.status.value
+
+    tender.status = TenderStatus.FAILED
+    tender.progress_message = "Stopped by user."
+    # Recorded like any other failure so the Processing page's error log shows the
+    # stop alongside real failures. The detail says it was a deliberate stop rather
+    # than leaving a blank that reads like a crash.
+    tender.failed_stage = stopped_at
+    tender.error_detail = "Stopped by user from the Processing page."
+    tender.failed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(tender)
+
+    publish_progress(
+        str(tender.id), TenderStatus.FAILED,
+        percent=tender.progress_percent, message="Stopped by user.",
+    )
+    return _tender_out(tender)
+
+
+# --------------------------------------------------------------------------- #
+# reprocess (retry a failed / stopped analysis)                               #
+# --------------------------------------------------------------------------- #
+@router.post("/{tender_id}/reprocess", response_model=TenderOut)
+def reprocess_tender(
+    tender_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TenderOut:
+    """Run the analysis pipeline again for a tender that failed or was stopped.
+
+    Safe to call repeatedly: every stage of the pipeline deletes its own prior
+    rows for this tender before writing (chunks, requirements, matches), so a
+    re-run replaces the previous attempt rather than duplicating it. The row is
+    reset to UPLOADED first so the progress socket and the Processing queue both
+    treat it as a fresh run.
+
+    Only allowed for a tender that is not currently running — a tender still in
+    flight has to be stopped first (409), which keeps two workers off the same
+    tender.
+    """
+    tender = _get_tender(db, tender_id)
+    if tender.status not in (
+        TenderStatus.FAILED,
+        TenderStatus.READY_FOR_REVIEW,
+        TenderStatus.FINALIZED,
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This tender is still being analysed. Stop it before retrying.",
+        )
+
+    tender.status = TenderStatus.UPLOADED
+    tender.progress_percent = 0
+    tender.progress_message = "Queued for re-analysis."
+    tender.finalized_at = None
+    # The failure record describes the attempt that just ended, so it is cleared
+    # here rather than left to be read as the state of the run about to start.
+    tender.failed_stage = None
+    tender.error_detail = None
+    tender.failed_at = None
+    tender.support_requested_at = None
+    db.commit()
+    db.refresh(tender)
+
+    publish_progress(
+        str(tender.id), TenderStatus.UPLOADED,
+        percent=0, message="Queued for re-analysis.",
+    )
+    enqueue_pipeline(tender.id)
+    return _tender_out(tender)
+
+
+# --------------------------------------------------------------------------- #
+# delete (remove a tender entirely)                                           #
+# --------------------------------------------------------------------------- #
+@router.delete("/{tender_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+def delete_tender(
+    tender_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete a tender and everything on disk that belongs to it.
+
+    Removes the row (which cascades to `tender_chunks`, `requirements` and
+    `requirement_evidence_matches`), the source PDF, the assembled output folder
+    and the output zip. Deliberately allowed at any status — including while a
+    run is in flight — because a stuck or unwanted run is exactly the case a
+    Delete button is offered for. A worker still processing the tender will hit
+    a missing row on its next `db.refresh` and stop.
+
+    Files are best-effort: an on-disk cleanup failure is logged but does not
+    fail the delete, because the database is the source of truth and a stray
+    file with no row is a clean-up chore rather than corruption. The row goes
+    first so a mid-delete crash leaves nothing pointing at half-deleted files.
+    """
+    tender = _get_tender(db, tender_id)
+
+    source_path = tender.file_path
+    folder_path = tender.output_folder_path
+    zip_path = tender.output_zip_path
+
+    db.delete(tender)
+    db.commit()
+
+    # Best-effort file cleanup. Each try isolated so a failure on one artefact
+    # does not skip the others.
+    for path_str in (source_path, zip_path):
+        if not path_str:
+            continue
+        try:
+            path = Path(path_str)
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            logger.exception("Failed to remove tender file at %s", path_str)
+
+    if folder_path:
+        try:
+            folder = Path(folder_path)
+            if folder.is_dir():
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            logger.exception("Failed to remove tender output folder at %s", folder_path)
+
+
+# --------------------------------------------------------------------------- #
+# report-issue (email a failure to the technical support team)                #
+# --------------------------------------------------------------------------- #
+@router.post("/{tender_id}/report-issue", response_model=TenderOut)
+def report_tender_issue(
+    tender_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TenderOut:
+    """Record that a user has handed a failed tender to the support team.
+
+    The email itself is composed and sent from the user's OWN mailbox: the
+    frontend opens a pre-filled Gmail compose window (support address + the full
+    error) when the button is pressed, and the user sends it. This endpoint only
+    persists that the hand-off happened, which is what flips the error log entry
+    from the technical error to the calm "we're on it, please wait" state and
+    keeps it that way across reloads.
+
+    Sending from the user's own mailbox rather than a server SMTP account means
+    no mail credentials to configure, no new-sender spam problems, and the
+    support team gets a message from a real person they can reply to directly.
+
+    Only valid for a tender that actually failed — there is nothing to report on
+    a run that is still going or that finished.
+    """
+    tender = _get_tender(db, tender_id)
+
+    if tender.status != TenderStatus.FAILED:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This tender has not failed, so there is nothing to report.",
+        )
+
+    tender.support_requested_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(tender)
     return _tender_out(tender)

@@ -1,11 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-// The .tsx extension is explicit only because the starter's src/App.jsx is still
-// on disk and Vite resolves .jsx before .tsx — an extensionless import would
-// quietly load the old boilerplate instead. Drop the extension once App.jsx is
-// deleted.
-import App from '@/App.tsx'
+import App from '@/App'
 import { useAuthStore } from '@/store/authStore'
+import { applyTheme, getStoredTheme } from '@/lib/theme'
 import './index.css'
 
 const rootElement = document.getElementById('root')
@@ -31,6 +28,10 @@ if (!rootElement) {
  * restored session, and the guards react when the check resolves. `void` marks the
  * floating promise as intentional — `bootstrap` handles its own failures.
  */
+// Stamp the saved theme onto <html> before the first paint, so a dark-mode user
+// does not see a flash of the light palette while React boots.
+applyTheme(getStoredTheme())
+
 void useAuthStore.getState().bootstrap()
 
 createRoot(rootElement).render(

@@ -2,6 +2,13 @@
 
 Project instructions for Claude Code.
 
+## Start here — project context
+
+Before exploring the tree, read **`PROJECT_CONTEXT.md`** in this folder. It is the
+single onboarding file — what VR-Nexus is, where every important file lives, the
+workflow, how to run it, current status, and the traps — so you do not have to
+re-discover the project (and burn context) each new session. Read it first.
+
 ## Skill activation
 
 At the start of any task-oriented session — any interaction where you will

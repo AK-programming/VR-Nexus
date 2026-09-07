@@ -100,7 +100,7 @@ export function TextField({
           'mt-1.5 flex h-11 items-center gap-2.5 rounded-xl border px-3 transition-colors',
           'focus-within:bg-surface focus-within:ring-4',
           error
-            ? 'border-brand-300 bg-brand-50/60 focus-within:border-brand-500 focus-within:ring-brand-500/15'
+            ? 'border-brand-300 bg-selected focus-within:border-brand-500 focus-within:ring-brand-500/15'
             : 'border-hairline bg-field focus-within:border-brand-400 focus-within:ring-brand-500/15',
           disabled ? 'opacity-60' : '',
         ].join(' ')}

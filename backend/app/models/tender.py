@@ -11,7 +11,18 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import JSON, BigInteger, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,6 +78,39 @@ class Tender(Base, UUIDPKMixin, TimestampMixin):
     )
 
     finalized_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # --- failure record (the Processing page's error log) ---
+    # `progress_message` carries the failure sentence, but it is overwritten by
+    # every stage, so on its own it cannot say *where* a run died or keep the
+    # detail once the tender is retried into a new run. These three do:
+    #
+    #   failed_stage  the stage the run was at when it raised - the last state
+    #                 committed by _advance, read back after the rollback in
+    #                 _fail, so it is the stage that actually failed and not the
+    #                 half-written one.
+    #   error_detail  the exception class and message, plus the last few
+    #                 traceback frames. Text, not String(500): a stack tail is
+    #                 the part that tells a developer which call failed, and
+    #                 truncating it to fit a column is what makes an error log
+    #                 useless. Capped in code at ERROR_DETAIL_LIMIT.
+    #   failed_at     when, so the log can be ordered and aged independently of
+    #                 `updated_at`, which a retry moves.
+    #
+    # All three are cleared on a successful re-run (see the reprocess route), so
+    # what is on the row always describes the current attempt.
+    failed_stage: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    error_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # --- support handoff ---
+    # Set when a user pressed "Contact technical support" on a failed tender and
+    # the error was emailed to the support team. Its presence is what flips the
+    # error log entry from "here is the technical error + Retry" to the calm
+    # "reported, please wait 3-4 days" message a non-technical user should see.
+    # Cleared on reprocess, like the rest of the failure record.
+    support_requested_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # --- relationships ---
     uploaded_by_user: Mapped[Optional["User"]] = relationship(  # noqa: F821

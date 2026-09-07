@@ -207,6 +207,51 @@ export function finalizeTender(tenderId: string, options: CallOptions = {}): Pro
   return api.postEmpty<TenderDetail>(`${BASE}/${tenderId}/finalize`, options)
 }
 
+/**
+ * `POST /api/tenders/{id}/cancel` — stop a tender that is still being analysed.
+ * Marks it FAILED with a "Stopped by user." message; the long extraction stage
+ * notices and halts. Only valid while the tender is in flight (a settled tender
+ * comes back as a 409).
+ */
+export function cancelTender(tenderId: string, options: CallOptions = {}): Promise<TenderDetail> {
+  return api.postEmpty<TenderDetail>(`${BASE}/${tenderId}/cancel`, options)
+}
+
+/**
+ * `POST /api/tenders/{id}/report-issue` — email a failed tender's error to the
+ * support team and mark it reported. Returns the updated detail (with
+ * `support_requested_at` set) so the UI can flip to the "reported, please wait"
+ * state. A 503 means SMTP is not configured on the server; a 502 means the send
+ * itself failed — both come back as an `ApiError` the caller can branch on to
+ * offer a mailto: fallback.
+ */
+export function reportTenderIssue(tenderId: string, options: CallOptions = {}): Promise<TenderDetail> {
+  return api.postEmpty<TenderDetail>(`${BASE}/${tenderId}/report-issue`, options)
+}
+
+/**
+ * `DELETE /api/tenders/{id}` — removes the tender row and its on-disk files
+ * (source PDF, output folder, output zip). Cascades delete `tender_chunks`,
+ * `requirements` and `requirement_evidence_matches` at the database level.
+ *
+ * Allowed at any status: for a stuck or unwanted run, delete IS the fix, so
+ * the endpoint deliberately does not gate on `status`. A worker still processing
+ * a deleted tender hits a missing row on its next refresh and stops.
+ */
+export function deleteTender(tenderId: string, options: CallOptions = {}): Promise<void> {
+  return api.delete<void>(`${BASE}/${tenderId}`, options)
+}
+
+/**
+ * `POST /api/tenders/{id}/reprocess` — run the pipeline again for a tender that
+ * failed, was stopped, or has already been reviewed. Idempotent: each pipeline
+ * stage clears its own previous rows, so a retry replaces the earlier attempt.
+ * A tender that is still running comes back as a 409 — stop it first.
+ */
+export function reprocessTender(tenderId: string, options: CallOptions = {}): Promise<TenderDetail> {
+  return api.postEmpty<TenderDetail>(`${BASE}/${tenderId}/reprocess`, options)
+}
+
 /* -------------------------------------------------------------------------- */
 /* URLs                                                                       */
 /* -------------------------------------------------------------------------- */

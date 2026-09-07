@@ -380,7 +380,7 @@ export function DataTable<T>({
                   key={key}
                   className={[
                     'transition-colors duration-150',
-                    isSelected ? 'bg-brand-50/60' : 'hover:bg-surface-muted',
+                    isSelected ? 'bg-selected' : 'hover:bg-surface-muted',
                     rowClassName?.(row) ?? '',
                   ].join(' ')}
                 >

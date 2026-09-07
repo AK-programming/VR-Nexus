@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,14 +34,23 @@ class Requirement(Base, UUIDPKMixin, TimestampMixin):
     )
 
     page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # The page exactly as the tender writes it ("147", "1-2"). page_number keeps the
+    # first integer for sorting; this keeps the range the clause actually spans.
+    page_label: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     section_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     clause_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
 
     is_mandatory: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # WBS TN-EXT-02 calls this the "Mandatory/Advisory flag": real tenders say
+    # "Yes", "No" AND "No/Advisory", which a Boolean cannot hold. Verbatim here.
+    mandatory_raw: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     evaluation_impact: Mapped[Optional[EvaluationImpact]] = mapped_column(
         Enum(EvaluationImpact, name="evaluation_impact"), nullable=True
     )
+    # The enum above buckets into four values; tenders write compound impacts like
+    # "Financial / Pass-Fail" or "Technical Compliance". Kept word for word.
+    evaluation_impact_raw: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     marks: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
 
     evidence_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -72,6 +81,10 @@ class Requirement(Base, UUIDPKMixin, TimestampMixin):
     )
 
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Anything this tender carries that the fixed column set does not model, as
+    # {column name -> value}. The Excel tracker adds one column per distinct key.
+    extra_fields: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # --- relationships ---
     tender: Mapped["Tender"] = relationship(back_populates="requirements")  # noqa: F821

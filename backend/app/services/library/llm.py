@@ -36,11 +36,11 @@ def _get_client():
         from openai import OpenAI
 
         kwargs = dict(
-            api_key=_settings.OPENAI_API_KEY,
-            base_url=_settings.OPENAI_BASE_URL,
+            api_key=_settings.ANTHROPIC_API_KEY,
+            base_url=_settings.ANTHROPIC_BASE_URL,
         )
-        if _settings.OPENAI_USER_AGENT:
-            kwargs["default_headers"] = {"User-Agent": _settings.OPENAI_USER_AGENT}
+        if _settings.ANTHROPIC_USER_AGENT:
+            kwargs["default_headers"] = {"User-Agent": _settings.ANTHROPIC_USER_AGENT}
         _client = OpenAI(**kwargs)
     return _client
 
@@ -49,9 +49,15 @@ def is_available() -> bool:
     return _settings.llm_available
 
 
-def complete(prompt: str, system: str = "", max_tokens: int = 2000) -> str:
+def complete(prompt: str, system: str = "", max_tokens: int = 2000, model: str = "") -> str:
     """Single-turn completion. Returns "" on any failure rather than raising —
     callers fall back to heuristics.
+
+    `model` defaults to ANTHROPIC_MODEL (the reasoning model, used for the
+    grounded Ask). Pass ANTHROPIC_EXTRACTION_MODEL explicitly for mechanical,
+    high-volume calls like auto-tagging, the same tiering
+    app/services/extraction.py uses for tender extraction — same key, cheaper
+    model, since there is no judgment call in "copy this text into this field".
 
     No `temperature`: some newer models reject it outright (400 "`temperature`
     is deprecated for this model"), and their default is already low enough for
@@ -68,7 +74,7 @@ def complete(prompt: str, system: str = "", max_tokens: int = 2000) -> str:
 
     try:
         response = _get_client().chat.completions.create(
-            model=_settings.OPENAI_MODEL,
+            model=model or _settings.ANTHROPIC_MODEL,
             messages=messages,
             max_tokens=max_tokens,
         )
@@ -78,9 +84,9 @@ def complete(prompt: str, system: str = "", max_tokens: int = 2000) -> str:
         return ""
 
 
-def complete_json(prompt: str, system: str = "", max_tokens: int = 2000) -> dict:
+def complete_json(prompt: str, system: str = "", max_tokens: int = 2000, model: str = "") -> dict:
     """Completion expected to return a JSON object. Returns {} on failure."""
-    raw = complete(prompt, system=system, max_tokens=max_tokens)
+    raw = complete(prompt, system=system, max_tokens=max_tokens, model=model)
     if not raw:
         return {}
 

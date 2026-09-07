@@ -5,11 +5,14 @@
  * pick a category, add files, send them. Category is first because it is not metadata —
  * it is part of the URL (`POST /{category}/upload`), so nothing can be sent without it.
  *
- * Upload and indexing are deliberately two presses rather than one. The server splits
- * them for a reason: the duplicate check runs at upload, before anything is parsed or
- * embedded, and a near-duplicate warning is a judgement for a person to make. Fusing
- * the two would mean discovering "this is 96% the same as a document you already have"
- * after paying to embed it.
+ * **Upload continues into indexing on its own** — one press takes a clean batch from
+ * files on disk to the processing page watching the job. The server still splits the
+ * two calls, and the reason it does is preserved as the one exception: the duplicate
+ * check runs at upload, before anything is parsed or embedded, and a near-duplicate
+ * warning is a judgement for a person to make. So a batch that came back with a
+ * warning — or with any refusal — stops here with the Index button, rather than
+ * discovering "this is 96% the same as a document you already have" after paying to
+ * embed it. Everything else goes straight through.
  *
  * Metadata is optional in the truest sense — the backend's tagger fills in whatever is
  * left blank and records what it inferred under `auto_tagged_fields`, so a blank field
@@ -62,7 +65,7 @@ import {
 /** What each category is for, so the choice is not three synonyms for "document". */
 const CATEGORY_HELP: Record<DocumentCategory, string> = {
   case_study: 'Past project write-ups. What VR-Nexus cites as proven experience.',
-  methodology: 'How the work gets done — delivery, QA, security, governance.',
+  methodology: 'How the work gets done - delivery, QA, security, governance.',
   company_document: 'Profiles, certifications, policies and other standing material.',
 }
 
@@ -235,6 +238,12 @@ export function UploadDocumentsPage() {
 
     let succeeded = 0
     let failed = 0
+    /* Collected here rather than read from `uploadedIds` afterwards: `patchUpload` is a
+       state update, so the derived list is still the pre-upload one inside this call. */
+    const uploadedNow: string[] = []
+    /* Near-duplicates are uploaded, not refused — but they are the one case the
+       automatic hand-off to indexing must not swallow (see the file header). */
+    let flagged = 0
 
     /* One at a time. Six parallel multipart uploads of a 100 MB file each is a way to
        exhaust the browser's connection pool and time all six out together; sequential
@@ -251,10 +260,15 @@ export function UploadDocumentsPage() {
           duplicateWarning: response.duplicate_warning,
           message:
             response.duplicate_warning && response.duplicate_warning.near_matches.length > 0
-              ? `Similar to ${response.duplicate_warning.near_matches[0].original_filename}. Uploaded anyway — check before indexing.`
+              ? `Similar to ${response.duplicate_warning.near_matches[0].original_filename}. Uploaded anyway - check before indexing.`
               : null,
         })
+        uploadedNow.push(response.document.id)
         succeeded += 1
+
+        if (response.duplicate_warning && response.duplicate_warning.near_matches.length > 0) {
+          flagged += 1
+        }
       } catch (error) {
         /* 409 is the byte-identical duplicate, which the server refuses outright. It is
            the one failure that is not a problem to fix, so it gets its own wording
@@ -264,7 +278,7 @@ export function UploadDocumentsPage() {
         patchUpload(upload.id, {
           status: 'rejected',
           message: isDuplicate
-            ? 'Already in the library — an identical file is stored.'
+            ? 'Already in the library - an identical file is stored.'
             : errorMessage(error),
         })
         failed += 1
@@ -273,12 +287,23 @@ export function UploadDocumentsPage() {
 
     setBusy(false)
 
+    /* A clean batch continues on its own: indexing is the only thing an uploaded
+       document is waiting for, and stopping to ask for a second click on the one
+       button that could possibly be pressed is a step that carries no decision. The
+       user lands on the processing page watching the job they just started. A batch
+       with refusals stops here instead — those rows need reading before anything is
+       indexed, so the manual Index button stays for that case. */
+    if (failed === 0 && flagged === 0 && uploadedNow.length > 0) {
+      await startIndexing(uploadedNow)
+      return
+    }
+
     if (failed === 0) {
       setNotice({
         tone: 'success',
-        text: `${formatCount(succeeded)} ${succeeded === 1 ? 'document' : 'documents'} uploaded. Index ${
-          succeeded === 1 ? 'it' : 'them'
-        } to make ${succeeded === 1 ? 'it' : 'them'} searchable.`,
+        text: `${formatCount(succeeded)} uploaded, but ${
+          flagged === 1 ? 'one looks' : `${formatCount(flagged)} look`
+        } similar to something already in the library. Check the note below, then index when you are happy.`,
       })
       return
     }
@@ -292,8 +317,14 @@ export function UploadDocumentsPage() {
     })
   }
 
-  async function handleIndex() {
-    if (uploadedIds.length === 0) {
+  /**
+   * Enqueues indexing for the given documents and follows the first job to the
+   * processing page. Takes its ids as an argument rather than reading `uploadedIds`
+   * so the automatic path (straight after a clean upload, when that derived list has
+   * not re-rendered yet) and the manual button can share one implementation.
+   */
+  async function startIndexing(ids: string[]) {
+    if (ids.length === 0) {
       return
     }
 
@@ -301,7 +332,7 @@ export function UploadDocumentsPage() {
     setNotice(null)
 
     try {
-      const response = await train(uploadedIds)
+      const response = await train(ids)
       const firstJob = response.jobs[0]
 
       if (firstJob) {
@@ -321,8 +352,7 @@ export function UploadDocumentsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
+    <div className="flex flex-col gap-4">
         {/*
           Radio cards, not a select. Three options, each needing a sentence of
           explanation, and the choice changes which endpoint the file goes to — that is
@@ -346,7 +376,7 @@ export function UploadDocumentsPage() {
                       'group relative flex cursor-pointer flex-col gap-2 rounded-xl border p-4',
                       'transition-colors duration-150',
                       isActive
-                        ? 'border-brand-400 bg-brand-50/70'
+                        ? 'border-brand-400 bg-selected'
                         : 'border-hairline bg-surface hover:border-neutral-300 hover:bg-surface-muted',
                     ].join(' ')}
                   >
@@ -392,6 +422,8 @@ export function UploadDocumentsPage() {
           </fieldset>
         </Panel>
 
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
         <Panel
           title="Files"
           description={
@@ -496,7 +528,7 @@ export function UploadDocumentsPage() {
                   variant="primary"
                   leadingIcon={<DatabaseIcon />}
                   disabled={busy}
-                  onClick={() => void handleIndex()}
+                  onClick={() => void startIndexing(uploadedIds)}
                 >
                   {`Index ${formatCount(uploadedIds.length)} ${
                     uploadedIds.length === 1 ? 'document' : 'documents'
@@ -512,7 +544,9 @@ export function UploadDocumentsPage() {
               >
                 {readyCount === 0
                   ? 'Upload'
-                  : `Upload ${formatCount(readyCount)} ${readyCount === 1 ? 'file' : 'files'}`}
+                  : `Upload & index ${formatCount(readyCount)} ${
+                      readyCount === 1 ? 'file' : 'files'
+                    }`}
               </ActionButton>
             </div>
           </div>
@@ -618,6 +652,7 @@ export function UploadDocumentsPage() {
             </p>
           )}
         </Panel>
+      </div>
       </div>
     </div>
   )

@@ -39,6 +39,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.health import router as health_router
 from app.api.routes.library import router as library_router
 from app.api.routes.library_ws import router as library_ws_router
 from app.api.routes.tenders import router as tenders_router
@@ -72,6 +73,7 @@ app.include_router(tenders_router)
 app.include_router(ws_router)
 app.include_router(library_router)
 app.include_router(library_ws_router)
+app.include_router(health_router)
 
 
 @app.get("/health")

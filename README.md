@@ -119,7 +119,17 @@ The Evidence Library is at `/api/library`, and the tender endpoints are at `/api
 
 Two WebSocket endpoints carry progress, and they are mounted at the root rather than under `/api`. Library indexing publishes to `/ws/library/{job_id}`, which replays a snapshot from the persisted `index_jobs` row on connect so a late subscriber is not left blank. The tender pipeline publishes to `/ws/tenders/{id}/progress` and takes its JWT as a **query parameter**, because browsers cannot set headers on a `WebSocket`.
 
-`/health` performs a real `SELECT 1` rather than returning a hardcoded `ok`, so it fails when the database is unreachable. `/demo` serves `backend/static/tender_console.html`, a standalone dark-theme console covering the tender upload-and-track flow that the React app does not have a page for yet. It is not part of `myapp/` and should go when that flow exists in the frontend proper.
+`/health` performs a real `SELECT 1` rather than returning a hardcoded `ok`, so it fails when the database is unreachable. `/demo` serves `backend/static/tender_console.html`, a standalone dark-theme console covering the tender upload-and-track flow. `myapp/` now covers that flow itself — see the section below — so `/demo` has stopped being the only way to exercise it and is now a fallback for checking the pipeline without the React app running. It is not part of `myapp/` and can go once you no longer want that.
+
+## What the frontend actually covers
+
+Ten screens are built and reachable. Authentication is sign-in and register. The dashboard is one page. The Evidence Library is a section of three — the library listing, an upload screen, and live indexing progress — plus a PDF viewer that sits outside the section's tabs because it is one document open for reading rather than a fourth peer of the others. Tender Analysis mirrors that shape exactly: a listing, an upload screen, live pipeline progress, and a detail URL outside the tabs.
+
+Five routes render a placeholder inside the real dashboard shell. Four are sidebar destinations — AI Assistant, Activity, Settings, Profile. The fifth is the tender review workspace at `/tender-analysis/:tenderId`, which is the one screen the tender flow reaches but does not yet draw: the backend already returns extracted requirements, evidence matches and a scored report for a finished tender, and nothing renders them.
+
+Every placeholder is registered deliberately rather than left out, and this is the part worth remembering before adding a link anywhere. `myapp/src/app/router.tsx` ends in a catch-all that sends unknown URLs to sign-in, so an unregistered path does not show a "not found" page — it signs the user out. A link to a route that does not exist is therefore not a dead end, it is a logout button. Register the path first, even if all it renders is `PlaceholderPage`.
+
+Two API surfaces have full backend schemas and no frontend at all: `/api/library/search` and `/api/library/ask`. There are no TypeScript types, no service wrappers and no UI for either.
 
 ## Layout
 

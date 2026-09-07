@@ -213,7 +213,7 @@ function JobWatcher({
         {connection === 'offline' ? (
           <AlertMessage tone="neutral" icon={<SignalOffIcon />} title="Progress is not updating">
             The indexing service is not reachable, so what is shown is the last state on
-            record. Everything below keeps working — this panel refreshes itself as soon
+            record. Everything below keeps working - this panel refreshes itself as soon
             as the service answers.
           </AlertMessage>
         ) : null}
@@ -384,7 +384,7 @@ export function ProcessingPage() {
            already held by a worker. It is not a failure and is not painted as one. */
         setNotice({
           tone: 'info',
-          text: 'Nothing was queued — those documents are already indexed or already with a worker.',
+          text: 'Nothing was queued - those documents are already indexed or already with a worker.',
         })
       } else {
         setNotice({
@@ -566,7 +566,7 @@ export function ProcessingPage() {
                       aria-current={isFocused ? 'true' : undefined}
                       className={[
                         'flex w-full items-start gap-3 px-4 py-3 text-left transition-colors duration-150',
-                        isFocused ? 'bg-brand-50/60' : 'hover:bg-surface-muted',
+                        isFocused ? 'bg-selected' : 'hover:bg-surface-muted',
                       ].join(' ')}
                     >
                       <FileGlyph filename={document.original_filename} />

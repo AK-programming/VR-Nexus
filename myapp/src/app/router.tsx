@@ -12,29 +12,43 @@
  * without any page importing it, and it means the shell is mounted once and survives
  * navigation rather than being torn down and rebuilt on each link.
  *
- * The five placeholder routes are registered on purpose. Every sidebar item points at
- * a real path, and the catch-all below sends unknown URLs to sign-in, so an
- * unregistered nav item would throw a signed-in user out of the app.
+ * Placeholder routes are registered on purpose rather than left out. Every sidebar item
+ * points at a real path, every in-app link points at a registered one, and the catch-all
+ * below sends unknown URLs to sign-in — so an unregistered path does not show a "not
+ * found" page, it throws a signed-in user out of the app. Four of the five placeholders
+ * are sidebar destinations; the fifth is the tender review workspace, which two built
+ * pages already link to.
  *
- * Documents nests a second layout route inside the first. Two levels of shell is the
- * point: the dashboard chrome is the same on every signed-in page, and the Documents
- * heading and tabs are the same across that section's three screens, so each is mounted
- * once at the level it actually belongs to.
+ * Documents and Tender Analysis each nest a second layout route inside the first. Two
+ * levels of shell is the point: the dashboard chrome is the same on every signed-in page,
+ * and a section's heading and tabs are the same across its three screens, so each is
+ * mounted once at the level it actually belongs to. Both sections then put their
+ * single-item view — one document open for reading, one tender open for review — outside
+ * those tabs, as an absolute-path sibling.
  */
 
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { RedirectIfAuthenticated, RequireAuth } from '@/app/guards'
-import { DOCUMENT_VIEWER_PATTERN, ROUTES } from '@/constants/routes'
+import { DOCUMENT_VIEWER_PATTERN, ROUTES, TENDER_DETAIL_PATTERN, TENDER_TOOLS_PATTERN } from '@/constants/routes'
 import { DashboardLayout } from '@/Layout/DashboardLayout'
 import { DocumentsLayout } from '@/Layout/DocumentsLayout'
+import { TenderAnalysisLayout } from '@/Layout/TenderAnalysisLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { DocumentsOverviewPage } from '@/pages/DocumentsOverviewPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { PdfViewerPage } from '@/pages/PdfViewerPage'
-import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { ProcessingPage } from '@/pages/ProcessingPage'
 import { RegisterPage } from '@/pages/RegisterPage'
+import { TenderOverviewPage } from '@/pages/TenderOverviewPage'
+import { TenderProcessingPage } from '@/pages/TenderProcessingPage'
+import { TenderReviewPage } from '@/pages/TenderReviewPage'
+import { TenderToolsPage } from '@/pages/TenderToolsPage'
+import { AiAssistantPage } from '@/pages/AiAssistantPage'
+import { ActivityPage } from '@/pages/ActivityPage'
+import { SettingsPage } from '@/pages/SettingsPage'
+import { ProfilePage } from '@/pages/ProfilePage'
 import { UploadDocumentsPage } from '@/pages/UploadDocumentsPage'
+import { UploadTenderPage } from '@/pages/UploadTenderPage'
 
 export function AppRouter() {
   return (
@@ -65,15 +79,45 @@ export function AppRouter() {
       >
         <Route path={ROUTES.home} element={<DashboardPage />} />
 
+        {/*
+          Tender Analysis is a section, so — exactly as Documents does below — it gets a
+          layout route of its own nested inside the dashboard shell, with `index` rather
+          than a second `/tender-analysis` path so the parent owns the URL and the child
+          cannot disagree with it.
+
+          Declaration order does not decide which child matches: React Router ranks by
+          specificity, so the static `upload` and `processing` segments outrank the
+          `:tenderId` sibling underneath, and /tender-analysis/upload can never be read
+          as a tender whose id happens to be "upload".
+        */}
+        <Route path={ROUTES.tenderAnalysis} element={<TenderAnalysisLayout />}>
+          <Route index element={<TenderOverviewPage />} />
+          <Route path="upload" element={<UploadTenderPage />} />
+          <Route path="processing" element={<TenderProcessingPage />} />
+        </Route>
+
+        {/* One tender open for review, so a sibling rather than a fourth tab, for the
+            reason the PDF viewer is one: the section's tabs would offer to navigate
+            away from it as if it were a peer of Overview and Upload.
+
+            The screen itself is not designed yet, so it renders the placeholder — but
+            the route has to exist either way. TenderOverviewPage and
+            TenderProcessingPage both already link here via tenderDetailPath(), and an
+            unregistered target does not 404, it falls to the catch-all and signs the
+            user out. */}
         <Route
-          path={ROUTES.tenderAnalysis}
+          path={TENDER_DETAIL_PATTERN}
           element={
-            <PlaceholderPage
-              title="Tender Analysis"
-              description="The analysis workspace is next on the roadmap. It will open a tender clause by clause, with the compliance checks alongside it."
-            />
+            <TenderReviewPage />
           }
         />
+
+        {/* The four tender tools (compliance matrix, evaluation simulator, risk
+            scanner, submission checker) sit under the tender detail as a
+            sibling, so the tools page can read the tender id from the URL and
+            fetch the same data the review page does. */}
+        <Route path={TENDER_TOOLS_PATTERN} element={<TenderToolsPage />} />
+
         {/*
           Documents is a section, so it gets a layout route of its own nested inside the
           dashboard shell: `DocumentsLayout` draws the heading and the segmented control
@@ -96,37 +140,25 @@ export function AppRouter() {
         <Route
           path={ROUTES.assistant}
           element={
-            <PlaceholderPage
-              title="AI Assistant"
-              description="The conversation view is not built yet. Your question came through, and it will be waiting when this page arrives."
-            />
+            <AiAssistantPage />
           }
         />
         <Route
           path={ROUTES.activity}
           element={
-            <PlaceholderPage
-              title="Activity"
-              description="The full history of uploads, analyses and queries will live here. The dashboard shows the last few."
-            />
+            <ActivityPage />
           }
         />
         <Route
           path={ROUTES.settings}
           element={
-            <PlaceholderPage
-              title="Settings"
-              description="Workspace, storage and notification preferences are on their way."
-            />
+            <SettingsPage />
           }
         />
         <Route
           path={ROUTES.profile}
           element={
-            <PlaceholderPage
-              title="Your profile"
-              description="Editing your name, phone number and company is coming. Signing out is in the account menu at the top right."
-            />
+            <ProfilePage />
           }
         />
       </Route>

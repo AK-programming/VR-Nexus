@@ -25,7 +25,6 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { Footer } from '@/components/dashboard/Footer'
 import { Header } from '@/components/dashboard/Header'
 import { Sidebar } from '@/components/dashboard/Sidebar'
-import { DASHBOARD_DATA } from '@/mocks/dashboard'
 import { useAuthStore } from '@/store/authStore'
 
 type DashboardLayoutProps = {
@@ -40,11 +39,39 @@ type DashboardLayoutProps = {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
+  /* Whether the lg rail is collapsed to an icon strip. Persisted per browser so a
+     user who prefers the narrow rail keeps it across visits. Wrapped in try/catch
+     because private windows can throw on storage access. */
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('vrnexus.sidebar.collapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+
+  function toggleSidebarCollapsed() {
+    setIsSidebarCollapsed((current) => {
+      const next = !current
+      try {
+        localStorage.setItem('vrnexus.sidebar.collapsed', next ? '1' : '0')
+      } catch {
+        /* best-effort */
+      }
+      return next
+    })
+  }
+
   /* Held here rather than in the header so focus can be sent back to the control
      that opened the drawer when the drawer is dismissed. Without it, dismissing
      with Escape drops focus onto <body> and the next Tab starts from the top of
      the document — a keyboard user would have to walk the whole header again. */
   const menuButtonRef = useRef<HTMLButtonElement>(null)
+
+  /* The one scrolling element (see below). Held so navigation can reset it to the
+     top: the shell is mounted once and survives route changes, so without this a
+     new page opens at wherever the previous page was scrolled to. */
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   const location = useLocation()
 
@@ -70,6 +97,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
      surviving a route change and covering the page the user just asked for. */
   useEffect(() => {
     setIsSidebarOpen(false)
+    /* Every screen opens at the top. `scrollTop = 0` rather than
+       window.scrollTo, because the window never scrolls here — this inner box is
+       the only scroller. Keyed on pathname so it fires on each navigation but not
+       on a same-page state change (a filter, a dialog) the user is mid-scroll in. */
+    scrollRef.current?.scrollTo({ top: 0 })
   }, [location.pathname])
 
   useEffect(() => {
@@ -94,21 +126,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         open={isSidebarOpen}
         onClose={dismissSidebar}
         onNavigate={closeSidebarQuietly}
+        onSignOut={logout}
         user={user}
+        collapsed={isSidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapsed}
       />
 
       {/* The content column. min-w-0 so a wide table or a long unbroken filename
           inside a panel cannot force the flex row wider than the window. */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Header
-          user={user}
           menuButtonRef={menuButtonRef}
           onOpenSidebar={() => setIsSidebarOpen(true)}
-          onSignOut={logout}
-          /* App-level, not page-level: the bell belongs to the shell, so the count
-             is read here. It will come from its own endpoint eventually — this is
-             the same single seam as every other number on the screen. */
-          unreadNotifications={DASHBOARD_DATA.unreadNotifications}
         />
 
         {/*
@@ -120,7 +149,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
          * height as its minimum and grows the whole shell past `h-dvh` instead of
          * scrolling inside it.
          */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+        <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           {/* flex-1 pushes the footer to the bottom of a short page and lets it fall
               naturally below the fold on a long one. */}
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children ?? <Outlet />}</main>

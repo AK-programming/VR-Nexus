@@ -32,6 +32,8 @@ import asyncio
 import json
 import logging
 import re
+import shutil
+import traceback
 import uuid
 import zipfile
 from datetime import date, datetime, timezone
@@ -39,6 +41,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 from sqlalchemy import delete
 
 from app.celery_app import celery_app  # noqa: F401  (ensures the app is configured)
@@ -53,7 +57,7 @@ from app.services.chunking import (
     detect_section_boundaries,
     guard_against_whole_document_ingestion,
 )
-from app.services.extraction import extract_tender_metadata, run_extraction
+from app.services.extraction import TenderCancelled, extract_tender_metadata, run_extraction
 from app.services.library.search import search
 from app.services.pdf_extraction import extract_pdf_pages
 from app.services.progress import publish_progress
@@ -63,11 +67,19 @@ logger = logging.getLogger(__name__)
 # Match thresholds, taken verbatim from the MatchType enum's own definitions in
 # app/models/enums.py so the two can never drift:
 #   AUTO       confidence >= 0.85
-#   SUGGESTED  0.50 - 0.84
-#   MISSING    < 0.50
+#   SUGGESTED  0.60 - 0.84
+#   MISSING    < 0.60
+#
+# SUGGESTED_MATCH_FLOOR was 0.50 and MATCH_TOP_K was 5. Raised the floor and
+# halved top_k because every qualifying candidate becomes its own PENDING row a
+# person has to click through, and at the old settings a single requirement
+# could hand back up to 5 near-duplicate suggestions clustered a few points
+# apart — reviewers were working through hundreds of rows, most of them low-
+# value. Fewer, better candidates below; AUTO rows below the review queue
+# entirely (see the review_status change in _run_matching).
 AUTO_MATCH_THRESHOLD = 0.85
-SUGGESTED_MATCH_FLOOR = 0.50
-MATCH_TOP_K = 5  # candidate evidence documents considered per requirement
+SUGGESTED_MATCH_FLOOR = 0.60
+MATCH_TOP_K = 2  # candidate evidence documents considered per requirement
 
 # Opening pages sampled for the one-shot tender-metadata extraction.
 METADATA_SAMPLE_PAGES = 5
@@ -131,20 +143,64 @@ def run_tender_pipeline(self, tender_id: str) -> dict:
 
         try:
             return _run_pipeline(db, tender)
+        except TenderCancelled:
+            logger.info("Tender %s stopped by user.", tender_id)
+            _fail(db, tender, "Stopped by user.")
+            return {"status": "cancelled", "tender_id": tender_id}
         except Exception as exc:  # noqa: BLE001 - record failure state either way
             logger.exception("Tender pipeline failed for %s", tender_id)
-            _fail(db, tender, str(exc))
+            _fail(db, tender, str(exc) or type(exc).__name__, exc=exc)
             return {"status": "failed", "tender_id": tender_id, "error": str(exc)}
     finally:
         db.close()
 
 
-def _fail(db, tender: Tender, message: str) -> None:
-    # The failing stage may have left uncommitted work; discard it, then record
-    # the failure. Prior stages are already committed by _advance and survive.
+#: How much of the exception detail is kept on the row. Enough for the class,
+#: the message and the last few traceback frames — the part that says which call
+#: failed — without letting a pathological stack fill the column.
+ERROR_DETAIL_LIMIT = 4000
+
+#: Frames kept from the tail of the traceback. The tail is where the failure is;
+#: the head is this module's own dispatch, which the reader already knows.
+ERROR_FRAME_COUNT = 6
+
+
+def _error_detail(exc: BaseException) -> str:
+    """The exception rendered for a human reading the error log.
+
+    Class name first — a bare `str(exc)` is empty for plenty of exceptions
+    (`RuntimeError()`, `KeyError` renders only the key), and "something failed"
+    with no type is the least useful line an error log can hold. The last few
+    frames follow, newest last, because "which call raised" is the question a
+    failure actually has to answer.
+    """
+    head = f"{type(exc).__name__}: {exc}".strip().rstrip(":").strip()
+    frames = traceback.format_exception(type(exc), exc, exc.__traceback__)[1:]
+    tail = "".join(frames[-ERROR_FRAME_COUNT:]).strip()
+    detail = f"{head}\n\n{tail}" if tail else head
+    return detail[:ERROR_DETAIL_LIMIT]
+
+
+def _fail(db, tender: Tender, message: str, exc: BaseException | None = None) -> None:
+    """Record a terminal failure on the row and publish it.
+
+    The failing stage may have left uncommitted work; discard it, then record the
+    failure. Prior stages are already committed by _advance and survive.
+
+    The rollback is also what makes `failed_stage` truthful: it restores the row
+    to its last committed state, so `tender.status` read *after* it is the stage
+    _advance last completed — the stage the run was actually in — rather than
+    whatever a half-applied update left in the session.
+    """
     db.rollback()
+
+    stage = tender.status.value if tender.status else None
+
     tender.status = TenderStatus.FAILED
     tender.progress_message = message[:500]
+    tender.failed_stage = stage
+    tender.error_detail = _error_detail(exc) if exc is not None else message[:ERROR_DETAIL_LIMIT]
+    tender.failed_at = datetime.now(timezone.utc)
     db.commit()
     publish_progress(str(tender.id), TenderStatus.FAILED, message=message[:500])
 
@@ -318,14 +374,27 @@ def _parse_date(value) -> date | None:
 # MATCHING                                                                    #
 # --------------------------------------------------------------------------- #
 def _run_matching(db, tender: Tender) -> dict:
-    """For each requirement, semantic-search the Evidence Library and record the
-    candidate documents as RequirementEvidenceMatch rows, typed by confidence.
+    """For each requirement that actually needs evidence, semantic-search the
+    Evidence Library and record the candidate documents as
+    RequirementEvidenceMatch rows, typed by confidence.
 
     A requirement whose best candidate clears 0.85 gets one AUTO row per
-    qualifying document; 0.50-0.84 gets SUGGESTED rows; if nothing clears 0.50
-    we still record the single closest document as MISSING so the gap (and what
-    came nearest) is visible. Only an empty library (no candidate at all) leaves
-    a requirement with no row — there is no document to point one at.
+    qualifying document, recorded already ACCEPTED — a confident match doesn't
+    make a human click through it, it just has to stay overridable, which
+    accept/reject/reassign already handle regardless of a match's starting
+    status. 0.60-0.84 gets SUGGESTED rows, left PENDING, because that is the
+    band genuinely worth a person's judgment. Below 0.60 we still record the
+    single closest document as MISSING so the gap (and what came nearest) is
+    visible. Only an empty library (no candidate at all) leaves a requirement
+    with no row — there is no document to point one at.
+
+    `evidence_required is False` requirements are skipped before the search
+    call — narrative/context clauses the tender itself doesn't ask the bidder
+    to prove, so matching them was pure overhead: every qualifying candidate
+    became its own PENDING row in the review queue for a requirement no one
+    was ever going to attach evidence to. Skipping them here, rather than
+    filtering them out of the review queue after the fact, is what actually
+    shrinks that queue instead of just hiding the padding.
     """
     requirements = (
         db.query(Requirement)
@@ -345,7 +414,7 @@ def _run_matching(db, tender: Tender) -> dict:
         db.commit()
 
     total = len(requirements)
-    auto = suggested = missing = no_candidates = 0
+    auto = suggested = missing = no_candidates = not_required = 0
 
     _advance(
         db, tender, TenderStatus.MATCHING, 65,
@@ -353,9 +422,19 @@ def _run_matching(db, tender: Tender) -> dict:
     )
     if total == 0:
         return {"auto_matches": 0, "suggested_matches": 0, "missing_matches": 0,
-                "unmatched_no_library": 0}
+                "unmatched_no_library": 0, "not_required": 0}
 
     for i, req in enumerate(requirements, start=1):
+        if not req.evidence_required:
+            not_required += 1
+            if i % 10 == 0 or i == total:
+                percent = 65 + int((i / total) * 17)  # 65 -> 82
+                _advance(
+                    db, tender, TenderStatus.MATCHING, percent,
+                    f"Matched {i} of {total} requirement(s).",
+                )
+            continue
+
         query = (req.description or "").strip()
         hits = search(db, query, limit=MATCH_TOP_K) if query else []
 
@@ -382,7 +461,18 @@ def _run_matching(db, tender: Tender) -> dict:
                         document_id=doc_id,
                         confidence_score=round(sim, 4),
                         match_type=match_type,
-                        review_status=MatchReviewStatus.PENDING,
+                        # AUTO clears the confident threshold on its own — record it
+                        # already accepted instead of PENDING, so it counts toward
+                        # coverage immediately and never sits in the human review
+                        # queue. A reviewer can still reject or reassign it later;
+                        # this only changes where it starts, not what's allowed to
+                        # happen to it.
+                        review_status=(
+                            MatchReviewStatus.ACCEPTED
+                            if match_type == MatchType.AUTO
+                            else MatchReviewStatus.PENDING
+                        ),
+                        reviewed_at=datetime.now(timezone.utc) if match_type == MatchType.AUTO else None,
                     )
                 )
         elif ranked:
@@ -414,6 +504,7 @@ def _run_matching(db, tender: Tender) -> dict:
         "auto_matches": auto,
         "suggested_matches": suggested,
         "missing_matches": missing,
+        "not_required": not_required,
         "unmatched_no_library": no_candidates,
     }
 
@@ -455,14 +546,82 @@ def _compute_report(db, tender: Tender) -> dict:
 # --------------------------------------------------------------------------- #
 # ASSEMBLING_FOLDER                                                           #
 # --------------------------------------------------------------------------- #
+def _match_covered(m) -> bool:
+    """A single match counts toward coverage when the reviewer accepted it, or it
+    auto-matched and has not been rejected. Same rule as _compute_report and
+    routes/tenders._requirement_covered, so marks, the coverage column and the
+    Required Documents folder can never disagree."""
+    return (
+        m.review_status == MatchReviewStatus.ACCEPTED
+        or (m.match_type == MatchType.AUTO and m.review_status != MatchReviewStatus.REJECTED)
+    )
+
+
+def _requirement_covered(req) -> bool:
+    return any(_match_covered(m) for m in req.evidence_matches)
+
+
+def _coverage_label(req) -> str:
+    if not req.evidence_required:
+        return "Not required"
+    if _requirement_covered(req):
+        return "Covered"
+    if any(
+        m.match_type == MatchType.SUGGESTED and m.review_status == MatchReviewStatus.PENDING
+        for m in req.evidence_matches
+    ):
+        return "Needs review"
+    return "Missing"
+
+
+def _safe_component(name: str, fallback: str = "file") -> str:
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", (name or "").strip()).strip("_") or fallback
+    return base[:80]
+
+
+_HEADER_FONT = Font(bold=True)
+_WRAP_TOP = Alignment(vertical="top", wrap_text=True)
+
+
+def _style_header(ws, ncols: int) -> None:
+    for col in range(1, ncols + 1):
+        ws.cell(row=1, column=col).font = _HEADER_FONT
+    ws.freeze_panes = "A2"
+
+
+def _set_widths(ws, widths) -> None:
+    for index, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(index)].width = width
+
+
 def _assemble_folder(db, tender: Tender) -> str:
-    """Write OUTPUT_STORAGE_DIR/{tender_id}/ with a requirements+matches
-    workbook and a summary.json, then zip it to OUTPUT_STORAGE_DIR/{tender_id}.zip.
-    Records both paths on the Tender row (TN-OUT-02/03/04)."""
+    """Write OUTPUT_STORAGE_DIR/{tender_id}/ and zip it (TN-OUT-02/03/04).
+
+    The folder holds, exactly as the Implementation Plan's Stage 4 describes:
+      - the requirements tracker workbook, multi-sheet: Requirements (the main
+        clause-by-clause table), Summary (counts and marks by section and by
+        evaluation type), Evidence Matches (per-match confidence and review
+        state), and Instructions;
+      - the original tender document;
+      - a "Required Documents" subfolder holding a copy of every matched
+        evidence file (the case studies, methodology and company documents that
+        answer a requirement); and
+      - summary.json.
+    then compresses the lot to OUTPUT_STORAGE_DIR/{tender_id}.zip.
+
+    Rebuilt from scratch on every call — finalize included — so a reviewer who
+    rejects a match and re-finalizes does not leave its evidence file orphaned
+    in the package. The zip sits beside the folder, not inside it, so clearing
+    the folder first is safe. Which files land in Required Documents follows the
+    same covered rule as the marks report, so the package and the score agree.
+    """
     settings = get_settings()
     out_root = Path(settings.OUTPUT_STORAGE_DIR)
     folder = out_root / str(tender.id)
-    folder.mkdir(parents=True, exist_ok=True)
+    if folder.exists():
+        shutil.rmtree(folder, ignore_errors=True)
+    required_dir = folder / "Required Documents"
+    required_dir.mkdir(parents=True, exist_ok=True)
 
     requirements = (
         db.query(Requirement)
@@ -471,50 +630,277 @@ def _assemble_folder(db, tender: Tender) -> str:
         .all()
     )
 
+    # --- copy the matched evidence into Required Documents ----------------- #
+    # One copy per document even when it answers several requirements, ordered
+    # by first appearance so the folder reads in requirement order.
+    doc_relpath: dict = {}          # document.id -> "Required Documents/<file>"
+    used_names: set = set()
+    missing_files: list = []
+    for req in requirements:
+        for m in req.evidence_matches:
+            if not _match_covered(m):
+                continue
+            doc = m.document
+            if doc is None or doc.id in doc_relpath:
+                continue
+            src = Path(doc.file_path) if doc.file_path else None
+            ext = src.suffix if src else ""
+            stem = _safe_component(doc.title or doc.original_filename, "document")
+            name = f"{doc.category.value}__{stem}{ext}"
+            counter = 1
+            while name in used_names:
+                counter += 1
+                name = f"{doc.category.value}__{stem}_{counter}{ext}"
+            used_names.add(name)
+            if src and src.is_file():
+                try:
+                    shutil.copy2(src, required_dir / name)
+                    doc_relpath[doc.id] = f"Required Documents/{name}"
+                    continue
+                except OSError:
+                    logger.warning("Could not copy evidence file %s", src)
+            # Row exists but the bytes are gone (storage volume reset, usually).
+            missing_files.append(str(doc.title or doc.original_filename))
+
     wb = Workbook()
+
+    # --- Sheet 1: Requirements (the main tracker) -------------------------- #
+    #
+    # Column order and headings reproduce the client's own tracker exactly, so a
+    # generated pack drops straight into their existing process:
+    #   Page Number | Section Name | Responsibility | Reference Number |
+    #   Clause / Requirement Description | Mandatory | Evaluation Impact | DPL |
+    #   PRIME Responsibility | The Tulepaak Responsibility | Joint Responsibility |
+    #   Evidence / Document Required | Remarks
+    # Values are written VERBATIM (the *_raw columns), so "No/Advisory" and
+    # "Financial / Pass-Fail" survive instead of being flattened into the enums the
+    # pipeline uses internally. A field the tender does not state is left blank -
+    # never "N/A", never guessed.
+    #
+    # Three VR-Nexus columns follow the tender's own set (Marks, Matched File(s),
+    # Coverage), and then one column per extra label this particular tender carried
+    # (Requirement.extra_fields), so a tender richer than the template widens the
+    # sheet instead of losing data.
     ws = wb.active
     ws.title = "Requirements"
-    ws.append(
-        ["#", "Page", "Section", "Clause", "Description", "Mandatory",
-         "Evaluation Impact", "Marks", "Evidence Required", "Status"]
-    )
-    for idx, r in enumerate(requirements, start=1):
+
+    TENDER_HEADERS = [
+        "Page Number",
+        "Section Name",
+        "Responsibility",
+        "Reference Number",
+        "Clause / Requirement Description",
+        "Mandatory (Yes/No)",
+        "Evaluation Impact (Pass/Fail / Technical Score / Financial / Compliance)",
+        "DPL",
+        "PRIME Responsibility (Yes/No)",
+        "The Tulepaak Responsibility (Yes/No)",
+        "Joint Responsibility (Yes/No)",
+        "Evidence / Document Required",
+        "Remarks",
+    ]
+    VRNEXUS_HEADERS = ["Marks", "Matched File(s)", "Coverage"]
+
+    # Union of every extra label this tender produced, in a stable order.
+    extra_keys: list = []
+    seen_keys: set = set()
+    for r in requirements:
+        for key in (r.extra_fields or {}):
+            if key not in seen_keys:
+                seen_keys.add(key)
+                extra_keys.append(str(key))
+    extra_keys.sort(key=str.lower)
+
+    main_headers = TENDER_HEADERS + VRNEXUS_HEADERS + extra_keys
+    ws.append(main_headers)
+
+    for r in requirements:
+        seen_docs: set = set()
+        files: list = []
+        for m in r.evidence_matches:
+            if not _match_covered(m) or m.document is None or m.document.id in seen_docs:
+                continue
+            seen_docs.add(m.document.id)
+            files.append(
+                doc_relpath.get(m.document.id, m.document.title or m.document.original_filename)
+            )
+
+        # Verbatim first, normalised only as a fallback for rows extracted before
+        # the *_raw columns existed.
+        page = r.page_label or (str(r.page_number) if r.page_number is not None else "")
+        mandatory = r.mandatory_raw or _yn(r.is_mandatory)
+        impact = r.evaluation_impact_raw or (
+            r.evaluation_impact.value if r.evaluation_impact else ""
+        )
+        extras = r.extra_fields or {}
+
         ws.append([
-            idx,
-            r.page_number if r.page_number is not None else "",
+            page,
             r.section_name or "",
+            r.responsibility or "",
             r.clause_reference or "",
             (r.description or "")[:32000],  # Excel's per-cell character ceiling
-            _yn(r.is_mandatory),
-            r.evaluation_impact.value if r.evaluation_impact else "",
+            mandatory,
+            impact,
+            r.dpl or "",
+            r.prime or "",
+            r.the_t or "",
+            r.joint_responsibility or "",
+            r.evidence_description or "",
+            r.remarks or "",
             float(r.marks) if r.marks is not None else "",
-            "Yes" if r.evidence_required else "No",
-            r.status.value,
+            "\n".join(files),
+            _coverage_label(r),
+            *[extras.get(key, "") for key in extra_keys],
         ])
 
-    ws2 = wb.create_sheet("Evidence Matches")
-    ws2.append(
+    _style_header(ws, len(main_headers))
+    _set_widths(
+        ws,
+        [10, 26, 16, 14, 60, 14, 24, 8, 14, 16, 14, 34, 34, 8, 32, 13]
+        + [22] * len(extra_keys),
+    )
+    # The prose columns wrap; everything else stays on one line so the sheet scans.
+    for row in ws.iter_rows(min_row=2):
+        for index in (4, 11, 12, 14):
+            if index < len(row):
+                row[index].alignment = _WRAP_TOP
+
+    # --- Sheet 2: Summary (counts + marks by section and evaluation type) -- #
+    total = len(requirements)
+    mandatory = sum(1 for r in requirements if r.is_mandatory is True)
+    optional = sum(1 for r in requirements if r.is_mandatory is False)
+    marks_available = sum(float(r.marks) for r in requirements if r.marks is not None)
+    marks_captured = sum(
+        float(r.marks) for r in requirements if r.marks is not None and _requirement_covered(r)
+    )
+    coverage_pct = round(marks_captured / marks_available * 100, 1) if marks_available > 0 else 0.0
+    covered_reqs = sum(1 for r in requirements if _requirement_covered(r))
+
+    ws2 = wb.create_sheet("Summary")
+    ws2.append(["Tender", tender.name or tender.original_filename])
+    ws2.append(["Reference", tender.reference_id or ""])
+    ws2.append(["Issuing authority", tender.issuing_authority or ""])
+    ws2.append(["Generated", datetime.now(timezone.utc).strftime("%d %b %Y %H:%M UTC")])
+    ws2.append([])
+    ws2.append(["Overview", ""])
+    overview_start = ws2.max_row
+    ws2.append(["Requirements", total])
+    ws2.append(["Mandatory", mandatory])
+    ws2.append(["Optional", optional])
+    ws2.append(["Requirements covered", covered_reqs])
+    ws2.append(["Marks available", round(marks_available, 2)])
+    ws2.append(["Marks captured", round(marks_captured, 2)])
+    ws2.append(["Coverage", f"{coverage_pct}%"])
+    ws2.cell(row=overview_start, column=1).font = _HEADER_FONT
+
+    def _grouped(key_of):
+        agg: dict = {}
+        for r in requirements:
+            key = key_of(r)
+            a = agg.setdefault(key, {"count": 0, "avail": 0.0, "cap": 0.0})
+            a["count"] += 1
+            if r.marks is not None:
+                a["avail"] += float(r.marks)
+                if _requirement_covered(r):
+                    a["cap"] += float(r.marks)
+        return agg
+
+    ws2.append([])
+    ws2.append(["By section", "", "", ""])
+    section_header = ws2.max_row
+    ws2.append(["Section", "Requirements", "Marks available", "Marks captured"])
+    for key, v in sorted(_grouped(lambda r: r.section_name or "Unspecified").items()):
+        ws2.append([key, v["count"], round(v["avail"], 2), round(v["cap"], 2)])
+    ws2.cell(row=section_header, column=1).font = _HEADER_FONT
+    for col in range(1, 5):
+        ws2.cell(row=section_header + 1, column=col).font = _HEADER_FONT
+
+    ws2.append([])
+    ws2.append(["By evaluation type", "", "", ""])
+    eval_header = ws2.max_row
+    ws2.append(["Evaluation type", "Requirements", "Marks available", "Marks captured"])
+    for key, v in sorted(
+        _grouped(
+            lambda r: r.evaluation_impact_raw
+            or (r.evaluation_impact.value if r.evaluation_impact else "Unspecified")
+        ).items()
+    ):
+        ws2.append([key, v["count"], round(v["avail"], 2), round(v["cap"], 2)])
+    ws2.cell(row=eval_header, column=1).font = _HEADER_FONT
+    for col in range(1, 5):
+        ws2.cell(row=eval_header + 1, column=col).font = _HEADER_FONT
+    _set_widths(ws2, [26, 16, 16, 16])
+
+    # --- Sheet 3: Evidence Matches (per-match detail) ---------------------- #
+    ws3 = wb.create_sheet("Evidence Matches")
+    ws3.append(
         ["Requirement Clause", "Requirement (excerpt)", "Matched Document",
          "Similarity", "Match Type", "Review Status"]
     )
-    matches = (
-        db.query(RequirementEvidenceMatch)
-        .join(Requirement, RequirementEvidenceMatch.requirement_id == Requirement.id)
-        .filter(Requirement.tender_id == tender.id)
-        .all()
-    )
-    for m in matches:
-        doc = m.document
-        ws2.append([
-            m.requirement.clause_reference or "",
-            (m.requirement.description or "")[:200],
-            (doc.title or doc.original_filename) if doc else "",
-            float(m.confidence_score) if m.confidence_score is not None else "",
-            m.match_type.value,
-            m.review_status.value,
-        ])
+    match_total = 0
+    for r in requirements:
+        for m in r.evidence_matches:
+            match_total += 1
+            doc = m.document
+            ws3.append([
+                r.clause_reference or "",
+                (r.description or "")[:200],
+                (doc.title or doc.original_filename) if doc else "",
+                float(m.confidence_score) if m.confidence_score is not None else "",
+                m.match_type.value,
+                m.review_status.value,
+            ])
+    _style_header(ws3, 6)
+    _set_widths(ws3, [16, 50, 32, 11, 13, 14])
+
+    # --- Sheet 4: Instructions -------------------------------------------- #
+    ws4 = wb.create_sheet("Instructions")
+    for line in [
+        "How to use this tender analysis pack",
+        "",
+        "This workbook and folder were generated by VR-Nexus from the tender named on the",
+        "Summary sheet. They are a decision aid for your bid team, not a substitute for",
+        "reading the tender.",
+        "",
+        "Requirements sheet",
+        "  One row per requirement VR-Nexus extracted, in document order. 'Coverage' reads:",
+        "    Covered      - answered by an accepted or auto-matched document (marks captured).",
+        "    Needs review - a suggested match is waiting for a reviewer's decision.",
+        "    Missing      - no document in your library answers this requirement yet.",
+        "    Not required - the requirement needs no supporting document.",
+        "  'Matched File(s)' points into the Required Documents folder beside this workbook.",
+        "",
+        "Summary sheet",
+        "  Counts and marks totalled overall, by tender section, and by evaluation type.",
+        "  Marks captured follows the same covered rule as the Coverage column.",
+        "",
+        "Evidence Matches sheet",
+        "  Every candidate document VR-Nexus found for each requirement, with its similarity",
+        "  score, match type and the reviewer's decision.",
+        "",
+        "Required Documents folder",
+        "  A copy of each matched case study, methodology and company document, ready to",
+        "  attach to your submission. Files are named <category>__<document title>.",
+        "",
+        "Review before you rely on it",
+        "  VR-Nexus proposes matches; a person confirms them. Coverage reflects the matches",
+        "  accepted at the time this pack was generated. Re-finalize the tender in VR-Nexus",
+        "  to regenerate this pack after any further review.",
+    ]:
+        ws4.append([line])
+    ws4.column_dimensions["A"].width = 90
 
     wb.save(str(folder / "requirements_and_matches.xlsx"))
+
+    # --- copy the original tender document into the folder root ------------ #
+    if tender.file_path:
+        tender_src = Path(tender.file_path)
+        if tender_src.is_file():
+            try:
+                shutil.copy2(tender_src, folder / (tender.original_filename or tender_src.name))
+            except OSError:
+                logger.warning("Could not copy the source tender %s", tender_src)
 
     summary = {
         "tender": {
@@ -531,14 +917,18 @@ def _assemble_folder(db, tender: Tender) -> str:
             ),
             "page_count": tender.page_count,
         },
-        "requirements_total": len(requirements),
-        "evidence_matches_total": len(matches),
+        "requirements_total": total,
+        "requirements_covered": covered_reqs,
+        "evidence_matches_total": match_total,
+        "evidence_files_included": len(doc_relpath),
+        "missing_evidence_files": missing_files,
         "marks_available": (
             float(tender.total_marks_available) if tender.total_marks_available is not None else None
         ),
         "marks_captured": (
             float(tender.total_marks_captured) if tender.total_marks_captured is not None else None
         ),
+        "coverage_percent": coverage_pct,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     (folder / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")

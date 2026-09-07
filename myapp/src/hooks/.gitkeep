@@ -1,5 +1,0 @@
-Hooks with no domain knowledge: useDisclosure, useDebouncedValue,
-useMediaQuery.
-
-Anything that knows about documents, tenders or the API belongs in that
-feature's own hooks/ folder instead.

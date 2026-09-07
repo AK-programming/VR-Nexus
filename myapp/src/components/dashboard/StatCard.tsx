@@ -51,18 +51,22 @@ export function StatCard({ stat }: { stat: SummaryStat }) {
         {formatCount(stat.value)}
       </p>
 
-      <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span
-          className={[
-            'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums',
-            isRise ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700',
-          ].join(' ')}
-        >
-          <TrendIcon className="size-3.5" />
-          {formatSignedPercent(stat.changePercent)}
-        </span>
-        <span className="text-xs text-neutral-500">vs last month</span>
-      </p>
+      {/* Only shown when there is a real movement to report; a flat 0% would read
+          as a fabricated trend on data that has no month-on-month history yet. */}
+      {stat.changePercent !== 0 ? (
+        <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            className={[
+              'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums',
+              isRise ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700',
+            ].join(' ')}
+          >
+            <TrendIcon className="size-3.5" />
+            {formatSignedPercent(stat.changePercent)}
+          </span>
+          <span className="text-xs text-neutral-500">vs last month</span>
+        </p>
+      ) : null}
     </div>
   )
 }

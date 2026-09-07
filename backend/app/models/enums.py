@@ -122,11 +122,13 @@ class RequirementStatus(str, enum.Enum):
 
 
 class MatchType(str, enum.Enum):
-    """TN-MTC-03 confidence thresholds."""
+    """TN-MTC-03 confidence thresholds. Kept verbatim in sync with
+    app/tasks/tender_pipeline.py's AUTO_MATCH_THRESHOLD / SUGGESTED_MATCH_FLOOR —
+    update both together."""
 
     AUTO = "auto"          # confidence >= 0.85
-    SUGGESTED = "suggested"  # 0.50 - 0.84
-    MISSING = "missing"     # < 0.50
+    SUGGESTED = "suggested"  # 0.60 - 0.84
+    MISSING = "missing"     # < 0.60
 
 
 class MatchReviewStatus(str, enum.Enum):

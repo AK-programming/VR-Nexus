@@ -47,6 +47,15 @@
   --color-surface-muted: #f7f8fa;
   --color-field: #f4f5f7;
   --color-hairline: #e6e8ec;
+  /* The fill behind a SELECTED / active / cited item (a picked category card, a
+     focused list row, a highlighted table row). It has to work with the ordinary
+     `text-neutral-*` body text on top, so unlike the fixed `brand-50` tint it is
+     theme-aware: a soft pink in light mode, a dark red-tinted wash in dark mode.
+     That is the whole fix for "selected card text is invisible in dark mode" —
+     the background follows the theme, so the inverting neutral text keeps its
+     contrast. Use `bg-selected` for selection fills; keep `bg-brand-50` only for
+     small brand chips/badges that carry brand-coloured (non-inverting) text. */
+  --color-selected: #ffe9e9;
 
   /* The seam radius, shared by the form panel and the cards inside it so the
      curve reads as one family rather than three arbitrary roundings. */
@@ -59,6 +68,39 @@
   --shadow-panel: 0 24px 70px -30px rgb(10 1 2 / 0.55);
 }
 
+/*
+ * Dark theme. The app is built on semantic tokens, so dark mode is a token swap:
+ * redefine the surface/field/hairline tokens and INVERT the neutral text/background
+ * scale under [data-theme="dark"]. Because Tailwind v4 utilities read these as
+ * var(--color-…), every `bg-surface`, `border-hairline`, `text-neutral-900`,
+ * `bg-neutral-100` etc. flips with no per-component change. Brand red, the `ink`
+ * sidebar, and pure white/black (used on brand buttons) are deliberately left as
+ * they are. `data-theme` is stamped by src/lib/theme.ts before first paint.
+ */
+:root[data-theme='dark'] {
+  /* Surfaces: a warm near-black, a touch of red in it to match the brand ink. */
+  --color-surface: #17181d;
+  --color-surface-muted: #1f2027;
+  --color-field: #1f2027;
+  --color-hairline: #2c2e37;
+  /* Selected fill in dark mode: a dark maroon wash, distinct from surface-muted
+     and clearly "chosen", with light neutral text reading cleanly on top. */
+  --color-selected: #3a1f24;
+
+  /* Inverted neutral scale: 900 (primary text) becomes near-white, 100 (chip fill)
+     becomes dark, and the mid tones stay readable on the dark surfaces above. */
+  --color-neutral-50: #1b1c22;
+  --color-neutral-100: #21232b;
+  --color-neutral-200: #2c2e37;
+  --color-neutral-300: #3b3e49;
+  --color-neutral-400: #6b7280;
+  --color-neutral-500: #9aa0ab;
+  --color-neutral-600: #b6bcc6;
+  --color-neutral-700: #d2d6dd;
+  --color-neutral-800: #e6e8ec;
+  --color-neutral-900: #f3f4f6;
+}
+
 @layer base {
   html {
     /* Anchor links and programmatic scrolls ease instead of jumping, except for
@@ -68,6 +110,20 @@
 
   body {
     @apply bg-surface font-sans text-neutral-900 antialiased;
+  }
+
+  /* Hide the scrollbar chrome everywhere while keeping the content scrollable.
+     The app scrolls in a few places (the main column, long tables, the pipeline
+     rail); the bars themselves add visual noise and, on Windows, a permanent grey
+     gutter. Scrolling still works with wheel, trackpad, touch and keyboard. */
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* old Edge/IE */
+  }
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none; /* Chrome, Safari, new Edge */
   }
 
   /* Numbers in tables and progress readouts should not jitter as they change. */

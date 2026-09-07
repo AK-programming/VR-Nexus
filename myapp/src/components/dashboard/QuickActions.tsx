@@ -36,7 +36,7 @@ function ActionItem({ action }: { action: QuickAction }) {
   return (
     <Link
       to={action.to}
-      className="group flex items-start gap-3.5 bg-surface p-5 transition-colors duration-150 hover:bg-brand-50"
+      className="group flex items-start gap-3.5 bg-surface p-5 transition-colors duration-150 hover:bg-selected"
     >
       <span
         aria-hidden="true"

@@ -753,3 +753,47 @@ export function metadataTags(document: LibraryDocument): MetadataTag[] {
   })).filter((tag) => tag.value !== '')
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* Library search & grounded answers (LIB search / ask)                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One retrieved passage — the wire shape of `SearchHit` in `schemas/library.py`.
+ * The same object serves plain `/search` and the `sources` of `/ask`; `cited` is
+ * only ever true on the ask path, where it marks a passage the generated answer
+ * actually leaned on.
+ */
+export interface LibrarySearchHit {
+  chunk_id: string
+  document_id: string
+  original_filename: string
+  title: string
+  category: DocumentCategory
+  section_name: string
+  phase: string
+  page_number: number
+  content: string
+  similarity: number
+  image_paths: string[]
+  cited: boolean
+}
+
+/** `GET /api/library/search` — retrieval with no generation. */
+export interface LibrarySearchResponse {
+  query: string
+  hits: LibrarySearchHit[]
+}
+
+/**
+ * `POST /api/library/ask` — a grounded answer plus the passages it was built
+ * from. `grounded` is false when the model declined for lack of evidence, cited
+ * nothing, or generation was unavailable; the `sources` may still be worth
+ * reading in every one of those cases, so they always travel with the answer.
+ */
+export interface LibraryAnswer {
+  question: string
+  answer: string
+  grounded: boolean
+  sources: LibrarySearchHit[]
+}

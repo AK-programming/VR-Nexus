@@ -17,12 +17,14 @@ from __future__ import annotations
 import logging
 import re
 
+from app.core.config import get_settings
 from app.models.enums import DocumentCategory
 from app.services.library import llm
 from app.services.library.parsers import base
 from app.services.library.parsers.base import ParseResult, RawDoc, Section
 
 logger = logging.getLogger(__name__)
+_settings = get_settings()
 
 CANONICAL_SECTIONS = ("Client", "Sector", "Scope", "Challenge", "Solution", "Results")
 
@@ -224,12 +226,15 @@ def _llm_sections(raw: RawDoc) -> tuple[list[Section], dict]:
         f"Case study text:\n{text}"
     )
 
+    # Mechanical structuring, not reasoning - same cheap-model tier as tender
+    # extraction and auto-tagging (see llm.complete's docstring).
     result = llm.complete_json(
         prompt,
         system=(
             "You structure business case studies into labelled sections. "
             "Reply with JSON only."
         ),
+        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
     )
     if not isinstance(result, dict):
         return [], {}

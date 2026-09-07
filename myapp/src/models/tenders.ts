@@ -103,7 +103,7 @@ export const STAGE_DESCRIPTIONS: Record<PipelineStage, string> = {
   matching: 'Searching your evidence library for supporting documents.',
   reporting: 'Scoring coverage and building the compliance summary.',
   assembling_folder: 'Packaging the requirements matrix and output folder.',
-  ready_for_review: 'Analysis complete — ready for your review.',
+  ready_for_review: 'Analysis complete - ready for your review.',
 }
 
 /**
@@ -303,6 +303,23 @@ export interface TenderListItem {
   submission_deadline: string | null
   finalized_at: string | null
   created_at: string
+  /** Carried on the list row so the error log can be built from one list read. */
+  progress_message: string | null
+
+  /**
+   * The failure record, all null unless the run failed (and cleared again on a
+   * reprocess). `progress_message` is the one-line reason; `failed_stage` is the
+   * pipeline stage it died at — a `TenderStatus` value as a string, but typed
+   * loosely because it is whatever the server recorded, including stages a future
+   * backend may add that this client does not know about yet.
+   */
+  failed_stage: string | null
+  /** Exception class, message, and the tail of the stack. Multi-line. */
+  error_detail: string | null
+  failed_at: string | null
+  /** Set once the failure was emailed to support — flips the error log entry to
+   *  the calm "reported, please wait" state. Null until the user reports it. */
+  support_requested_at: string | null
 }
 
 /** GET /api/tenders/{id} — full detail. */
@@ -332,6 +349,21 @@ export interface TenderDetail {
   finalized_at: string | null
   created_at: string
   updated_at: string | null
+
+  /**
+   * The failure record, all null unless the run failed (and cleared again on a
+   * reprocess). `progress_message` is the one-line reason; `failed_stage` is the
+   * pipeline stage it died at — a `TenderStatus` value as a string, but typed
+   * loosely because it is whatever the server recorded, including stages a future
+   * backend may add that this client does not know about yet.
+   */
+  failed_stage: string | null
+  /** Exception class, message, and the tail of the stack. Multi-line. */
+  error_detail: string | null
+  failed_at: string | null
+  /** Set once the failure was emailed to support — flips the error log entry to
+   *  the calm "reported, please wait" state. Null until the user reports it. */
+  support_requested_at: string | null
 }
 
 /** PATCH /api/tenders/{id} — every field optional; only those sent are applied. */
@@ -351,15 +383,31 @@ export interface Requirement {
   id: string
   tender_id: string
   page_number: number | null
+  /**
+   * The page exactly as the tender writes it ("147", "1-2"). `page_number` keeps
+   * the first integer for sorting; this keeps the range the clause spans.
+   */
+  page_label: string | null
   section_name: string | null
   clause_reference: string | null
   description: string
   is_mandatory: boolean | null
+  /** Verbatim flag: tenders say "Yes", "No" AND "No/Advisory". */
+  mandatory_raw: string | null
   evaluation_impact: EvaluationImpact | null
+  /** Verbatim impact, including compound values like "Financial / Pass-Fail". */
+  evaluation_impact_raw: string | null
   marks: number | null
   evidence_required: boolean
   evidence_description: string | null
   responsibility: string | null
+  /** Per-member responsibility split, as the client's tracker records it. */
+  dpl: string | null
+  prime: string | null
+  the_t: string | null
+  joint_responsibility: string | null
+  /** Anything this tender carried that the fixed columns do not model. */
+  extra_fields: Record<string, string> | null
   status: RequirementStatus
   needs_manual_review: boolean
   remarks: string | null
@@ -414,6 +462,9 @@ export interface TenderReport {
 
   requirements_with_evidence: number
   requirements_without_evidence: number
+  /** evidence_required is false — background/context clauses, not compliance
+   * obligations. Not part of with_evidence/without_evidence. */
+  requirements_not_required: number
 
   by_evaluation_impact: ImpactBreakdown[]
   evaluation_weighting: Record<string, unknown> | null

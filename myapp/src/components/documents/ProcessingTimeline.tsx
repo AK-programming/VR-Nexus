@@ -165,7 +165,7 @@ export function ProcessingTimeline({
                   ].join(' ')}
                 >
                   {STAGE_LABELS[value]}
-                  <span className="sr-only"> — {STATE_NAMES[state]}</span>
+                  <span className="sr-only"> - {STATE_NAMES[state]}</span>
                 </p>
                 {/* The description belongs to the node on a phone, where there is a
                     column of room beside it. On a five-across row there is not, and it

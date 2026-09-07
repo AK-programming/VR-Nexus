@@ -264,25 +264,27 @@ export function UploadTenderPage() {
     }
 
     /* Apply the optional metadata. The pipeline is already running, so a failure here
-       does not undo the upload — keep the id and let the user retry or move on rather
-       than losing what they typed or pretending it saved. */
+       does not undo the upload — it is a note to carry forward, not a reason to hold
+       the user on a form for a tender that is already being read. The message travels
+       in navigation state and the processing page shows it once. */
     const patch = buildPatch(metadata)
+    let warning: string | null = null
+
     if (Object.keys(patch).length > 0) {
       try {
         await updateTender(id, patch)
       } catch (error) {
-        setNotice({
-          tone: 'warning',
-          text: `The tender was uploaded and is being analysed, but its details did not save (${errorMessage(
-            error,
-          )}). Try again, or add them later from the tender's page.`,
-        })
-        setBusy(false)
-        return
+        warning = `The tender was uploaded and is being analysed, but its details did not save (${errorMessage(
+          error,
+        )}). Add them later from the tender's page.`
       }
     }
 
-    navigate(`${ROUTES.tenderProcessing}?tender=${id}`)
+    /* Straight to the progress screen, always: the analysis started the moment the
+       upload landed, so the only thing left to do with this tender is watch it. */
+    navigate(`${ROUTES.tenderProcessing}?tender=${id}`, {
+      state: warning ? { notice: warning } : undefined,
+    })
   }
 
   return (

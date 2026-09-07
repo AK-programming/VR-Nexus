@@ -12,9 +12,11 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 
+from app.core.config import get_settings
 from app.services.library import llm
 
 logger = logging.getLogger(__name__)
+_settings = get_settings()
 
 METADATA_FIELDS = ("doc_type", "client", "sector", "service_line", "geography", "keywords")
 
@@ -199,9 +201,12 @@ def _llm_fill(text: str, filename: str, category: str, missing: list[str]) -> di
         f"Document text:\n{text[:6000]}"
     )
 
+    # Mechanical field-filling, same tier as tender extraction - the cheap
+    # model, not the app's reasoning model (see llm.complete's docstring).
     result = llm.complete_json(
         prompt,
         system="You extract structured metadata from business documents. Reply with JSON only.",
+        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
     )
     return result if isinstance(result, dict) else {}
 

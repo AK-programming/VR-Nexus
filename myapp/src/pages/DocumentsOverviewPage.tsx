@@ -229,7 +229,6 @@ export function DocumentsOverviewPage() {
       /* `skipped` is not a failure — it is what pressing Train twice returns, and what
          an already-indexed document returns without `force`. Reporting it as an error
          would make the ordinary case look broken. */
-      const started = response.jobs.length
       const skipped = response.skipped.length
 
       setSelectedIds([])
@@ -248,7 +247,7 @@ export function DocumentsOverviewPage() {
         tone: 'info',
         text:
           skipped > 0
-            ? `Nothing to queue — ${formatCount(skipped)} ${
+            ? `Nothing to queue - ${formatCount(skipped)} ${
                 skipped === 1 ? 'document is' : 'documents are'
               } already indexed or in progress.`
             : 'Nothing to queue.',
@@ -374,7 +373,7 @@ export function DocumentsOverviewPage() {
         document.client ? (
           <span className="block max-w-[16rem] truncate">{document.client}</span>
         ) : (
-          <span className="text-neutral-400">—</span>
+          <span className="text-neutral-400">-</span>
         ),
     },
     {
@@ -393,7 +392,7 @@ export function DocumentsOverviewPage() {
             protected. Truncated to one line with the full text on hover, because these
             come back as Python exception strings and some of them are long.
           */}
-          {document.training_error ? (
+          {document.training_status === 'failed' && document.training_error ? (
             <span
               title={document.training_error}
               className="block max-w-[14rem] truncate text-xs text-rose-700"
@@ -420,7 +419,7 @@ export function DocumentsOverviewPage() {
         document.chunk_count > 0 ? (
           formatCount(document.chunk_count)
         ) : (
-          <span className="text-neutral-400">—</span>
+          <span className="text-neutral-400">-</span>
         ),
     },
     {
@@ -623,7 +622,7 @@ export function DocumentsOverviewPage() {
             is after ticking a box.
           */}
           {actionableIds.length > 0 ? (
-            <div className="flex flex-col gap-3 border-b border-hairline bg-brand-50/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-b border-hairline bg-selected px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm font-medium text-neutral-800">
                 {formatCount(actionableIds.length)} selected
               </p>
@@ -869,7 +868,7 @@ function SummaryFigure({
      visibly the same kind of affordance and only the destination differs. */
   const interactiveClasses = [
     'group flex w-full items-center gap-3 px-4 py-4 text-left transition-colors duration-150 sm:px-5',
-    active ? 'bg-brand-50/70 hover:bg-brand-50' : 'bg-surface hover:bg-surface-muted',
+    active ? 'bg-selected hover:bg-selected' : 'bg-surface hover:bg-surface-muted',
   ].join(' ')
 
   if (to) {

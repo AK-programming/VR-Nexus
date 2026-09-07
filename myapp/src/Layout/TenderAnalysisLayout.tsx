@@ -35,7 +35,7 @@ export function TenderAnalysisLayout() {
             Tender Analysis
           </h1>
           <p className="mt-1 text-sm text-neutral-500">
-            Upload a tender and VR-Nexus reads it clause by clause — extracting requirements,
+            Upload a tender and VR-Nexus reads it clause by clause - extracting requirements,
             matching your evidence, and scoring coverage.
           </p>
         </div>

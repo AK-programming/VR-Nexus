@@ -89,7 +89,11 @@ export function RecentProjects({
           <p className="max-w-xs text-xs leading-relaxed text-neutral-500">
             Upload a tender document and VR-Nexus will start an analysis for it.
           </p>
-          <PanelLink to={ROUTES.documents}>Upload a document</PanelLink>
+          {/* A tender, not a document: this panel lists tenders, and /documents is the
+              evidence library — a different section holding the case studies and
+              certificates a tender gets matched against. The label says "tender" so it
+              agrees with both the sentence above it and where it actually goes. */}
+          <PanelLink to={ROUTES.tenderUpload}>Upload a tender</PanelLink>
         </div>
       ) : (
         <ul className="divide-y divide-hairline">

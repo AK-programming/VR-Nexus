@@ -75,9 +75,6 @@ fastembed==0.5.1
 # openai: optional fallback for Evidence Library parsing + auto-tagging. Inert
 # unless OPENAI_API_KEY is set (see Settings.llm_available).
 openai==1.59.6
-# anthropic: required by app/services/extraction.py for tender requirement
-# extraction. Calls the Anthropic API directly, not a third-party router.
-anthropic==0.40.0
 
 # --- Tests ------------------------------------------------------------------
 pytest==8.3.4

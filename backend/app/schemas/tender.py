@@ -67,6 +67,22 @@ class TenderListItem(BaseModel):
     finalized_at: Optional[datetime] = None
     created_at: datetime
 
+    # Carried on the list row, not just the detail, because the error log on the
+    # Processing page is built from the one list read that page already makes —
+    # fetching a detail per failed tender to show a sentence would be a request
+    # per row for data the list could have carried.
+    progress_message: Optional[str] = None
+
+    # --- failure record (the Processing page's error log) ---
+    # `progress_message` is the one-line reason; the three below say where it
+    # died, the exception + stack tail, and when. All null on a tender that has
+    # not failed, and cleared again when it is reprocessed.
+    failed_stage: Optional[str] = None
+    error_detail: Optional[str] = None
+    failed_at: Optional[datetime] = None
+    # Set once the failure was emailed to support; flips the UI to "reported".
+    support_requested_at: Optional[datetime] = None
+
     model_config = {"from_attributes": True}
 
 
@@ -100,6 +116,17 @@ class TenderOut(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
+    # --- failure record (the Processing page's error log) ---
+    # `progress_message` is the one-line reason; the three below say where it
+    # died, the exception + stack tail, and when. All null on a tender that has
+    # not failed, and cleared again when it is reprocessed.
+    failed_stage: Optional[str] = None
+    error_detail: Optional[str] = None
+    failed_at: Optional[datetime] = None
+    # Set once the failure was emailed to support; flips the UI to "reported".
+    support_requested_at: Optional[datetime] = None
+
+
     model_config = {"from_attributes": True}
 
 
@@ -119,15 +146,28 @@ class RequirementOut(BaseModel):
     id: uuid.UUID
     tender_id: uuid.UUID
     page_number: Optional[int] = None
+    # The tender's own wording, kept beside the normalised columns: "1-2" pages,
+    # "No/Advisory" flags and compound impacts like "Financial / Pass-Fail" are
+    # what the tracker has to reproduce, and the enums above cannot hold them.
+    page_label: Optional[str] = None
     section_name: Optional[str] = None
     clause_reference: Optional[str] = None
     description: str
     is_mandatory: Optional[bool] = None
+    mandatory_raw: Optional[str] = None
     evaluation_impact: Optional[EvaluationImpact] = None
+    evaluation_impact_raw: Optional[str] = None
     marks: Optional[float] = None
     evidence_required: bool
     evidence_description: Optional[str] = None
     responsibility: Optional[str] = None
+    # Per-member responsibility split, as the client's tracker records it.
+    dpl: Optional[str] = None
+    prime: Optional[str] = None
+    the_t: Optional[str] = None
+    joint_responsibility: Optional[str] = None
+    # Anything this tender carried that the fixed columns do not model.
+    extra_fields: Optional[dict] = None
     status: RequirementStatus
     needs_manual_review: bool
     remarks: Optional[str] = None
@@ -196,8 +236,15 @@ class TenderReportOut(BaseModel):
     rejected_matches: int
     pending_matches: int
 
+    # Both computed only over evidence_required=True rows: a narrative clause
+    # the tender never asked the bidder to prove was never going to have
+    # evidence, so counting it here would just mislabel normal rows as
+    # "Unmatched" once matching stopped wasting a search on them.
     requirements_with_evidence: int
     requirements_without_evidence: int
+    #: evidence_required is False — background/context clauses, not compliance
+    #: obligations. Not part of requirements_with_evidence/without_evidence.
+    requirements_not_required: int
 
     by_evaluation_impact: list[ImpactBreakdown]
     evaluation_weighting: Optional[dict] = None

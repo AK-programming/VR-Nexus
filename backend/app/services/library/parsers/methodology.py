@@ -14,12 +14,14 @@ from __future__ import annotations
 import logging
 import re
 
+from app.core.config import get_settings
 from app.models.enums import DocumentCategory
 from app.services.library import llm
 from app.services.library.parsers import base
 from app.services.library.parsers.base import ParseResult, RawDoc, Section
 
 logger = logging.getLogger(__name__)
+_settings = get_settings()
 
 # "Phase 2 - Design", "Stage III: Build", "Step 4.", "Module 1 – Setup"
 PHASE_MARKER_RE = re.compile(
@@ -155,9 +157,12 @@ def _llm_sections(raw: RawDoc) -> list[Section]:
         f"Methodology text:\n{text}"
     )
 
+    # Mechanical structuring, not reasoning - same cheap-model tier as tender
+    # extraction and auto-tagging (see llm.complete's docstring).
     result = llm.complete_json(
         prompt,
         system="You structure methodology documents into ordered phases. Reply with JSON only.",
+        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
     )
     if not isinstance(result, dict):
         return []

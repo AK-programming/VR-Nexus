@@ -34,10 +34,12 @@ import { CheckIcon, CloseIcon, SpinnerIcon } from '@/components/ui/icons'
 
 /** How each node paints. Kept as one table so a state cannot be styled two ways. */
 const NODE_STYLES: Record<StageState, string> = {
-  done: 'border-emerald-300 bg-emerald-500 text-white',
-  active: 'border-sky-300 bg-sky-500 text-white',
-  pending: 'border-hairline bg-surface text-neutral-400',
-  failed: 'border-rose-300 bg-rose-500 text-white',
+  // Border matches the fill so the outer ring is a crisp solid edge, not the soft
+  // lighter halo (a -300 border on a -500 fill) that read as blurry at 28px.
+  done: 'border-emerald-500 bg-emerald-500 text-white',
+  active: 'border-sky-500 bg-sky-500 text-white',
+  pending: 'border-neutral-300 bg-surface text-neutral-400',
+  failed: 'border-rose-500 bg-rose-500 text-white',
 }
 
 const LABEL_STYLES: Record<StageState, string> = {
@@ -53,6 +55,23 @@ const STATE_NAMES: Record<StageState, string> = {
   active: 'in progress',
   pending: 'not started',
   failed: 'failed',
+}
+
+/**
+ * Compact labels for the horizontal (md+) track, where nine columns leave only a
+ * sliver of width each. One word per node so nothing wraps into its neighbour; the
+ * mobile vertical view still uses the fuller STAGE_LABELS, where there is room.
+ */
+const SHORT_STAGE_LABELS: Record<PipelineStage, string> = {
+  uploaded: 'Uploaded',
+  parsing: 'Parsing',
+  chunking: 'Chunking',
+  extracting: 'Extracting',
+  merging: 'Merging',
+  matching: 'Matching',
+  reporting: 'Reporting',
+  assembling_folder: 'Assembling',
+  ready_for_review: 'Review',
 }
 
 function NodeMark({ state }: { state: StageState }) {
@@ -130,7 +149,7 @@ export function TenderTimeline({ status, failedAt, progress, message }: TenderTi
           return (
             <li
               key={value}
-              className="relative flex min-w-0 gap-3.5 pb-6 last:pb-0 md:flex-1 md:flex-col md:items-center md:gap-2 md:pb-0 md:text-center"
+              className="relative flex min-w-0 gap-3.5 pb-6 last:pb-0 md:flex-1 md:flex-col md:items-center md:gap-2 md:px-1.5 md:pb-0 md:text-center"
             >
               {/* The vertical connector, one per node except the last. Anchored under
                   its own dot and run to the bottom of the item, so it meets the next
@@ -158,12 +177,13 @@ export function TenderTimeline({ status, failedAt, progress, message }: TenderTi
               <div className="min-w-0 md:w-full">
                 <p
                   className={[
-                    'text-xs font-semibold tracking-tight md:text-[0.75rem]',
+                    'text-xs font-semibold tracking-tight break-words md:text-[0.6875rem] md:leading-tight',
                     LABEL_STYLES[state],
                   ].join(' ')}
                 >
-                  {STAGE_LABELS[value]}
-                  <span className="sr-only"> — {STATE_NAMES[state]}</span>
+                  <span className="md:hidden">{STAGE_LABELS[value]}</span>
+                  <span className="hidden md:inline">{SHORT_STAGE_LABELS[value]}</span>
+                  <span className="sr-only"> - {STATE_NAMES[state]}</span>
                 </p>
                 {/* The description belongs to the node on a phone, where there is a
                     column of room beside it. On a nine-across row there is not, and it

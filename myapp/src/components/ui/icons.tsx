@@ -41,6 +41,16 @@ export function MailIcon({ className }: IconProps) {
   )
 }
 
+export function LifeBuoyIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <circle cx="12" cy="12" r="8.25" />
+      <circle cx="12" cy="12" r="3.25" />
+      <path d="m6.15 6.15 3.5 3.5M14.35 14.35l3.5 3.5M17.85 6.15l-3.5 3.5M9.65 14.35l-3.5 3.5" />
+    </svg>
+  )
+}
+
 export function LockIcon({ className }: IconProps) {
   return (
     <svg {...strokeIcon} className={className}>
@@ -646,3 +656,79 @@ export function PresentationIcon({ className }: IconProps) {
   )
 }
 
+
+export function SunIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </svg>
+  )
+}
+
+export function MoonIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+    </svg>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tender Tools                                                               */
+/* -------------------------------------------------------------------------- */
+
+/** A clipboard with a tick, for the compliance matrix. */
+export function ClipboardCheckIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <path d="M9 4.75H7.25A1.75 1.75 0 0 0 5.5 6.5v12a1.75 1.75 0 0 0 1.75 1.75h9.5a1.75 1.75 0 0 0 1.75-1.75V6.5a1.75 1.75 0 0 0-1.75-1.75H15" />
+      <rect x="9" y="3.25" width="6" height="3" rx="1" />
+      <path d="m9 13.5 2 2 4-4" />
+    </svg>
+  )
+}
+
+/** A calculator, for the evaluation score simulator. */
+export function CalculatorIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <rect x="4.75" y="3.25" width="14.5" height="17.5" rx="2.25" />
+      <rect x="7.5" y="6" width="9" height="4" rx="1" />
+      <path d="M8.5 13.5h.01M12 13.5h.01M15.5 13.5h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01" />
+    </svg>
+  )
+}
+
+/** A shield with an exclamation mark, for the risk scanner. */
+export function ShieldAlertIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <path d="M12 3.25l7 2.55v5.9c0 4.2-2.9 7.55-7 8.95-4.1-1.4-7-4.75-7-8.95V5.8Z" />
+      <path d="M12 9v3.5" />
+      <path d="M12 15.25v.1" />
+    </svg>
+  )
+}
+
+/** A box with a checkmark, for the submission readiness checker. */
+export function PackageCheckIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <path d="M12 3.75 20.25 8v8L12 20.25 3.75 16V8Z" />
+      <path d="M3.75 8 12 12.25 20.25 8" />
+      <path d="M12 12.25v8" />
+    </svg>
+  )
+}
+
+/** A circle with a question mark, for clarification questions. */
+export function HelpCircleIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <circle cx="12" cy="12" r="8.75" />
+      <path d="M9.75 9.75a2.25 2.25 0 0 1 4.35.75c0 1.5-2.1 2-2.1 3.25" />
+      <path d="M12 16.25v.1" />
+    </svg>
+  )
+}

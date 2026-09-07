@@ -160,7 +160,9 @@ export function useTenderProgress(
 
       const tick = async () => {
         try {
-          const tender = await getTender(tenderId, { signal: controller.signal })
+          // tenderId is non-null here: the effect returns early when it is null. The
+          // guard's narrowing is lost across this nested async closure, hence the assert.
+          const tender = await getTender(tenderId!, { signal: controller.signal })
           consecutiveFailures = 0
           record(tender.status, progressFromDetail(tender))
 

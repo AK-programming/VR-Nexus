@@ -6,8 +6,17 @@
  * add a new one. Opening a tender for review is the detail workspace's job and
  * adding one is Upload's, so neither is duplicated here — the row title links to
  * the first and the header button to the second. There is deliberately **no**
- * delete or re-run affordance: the tender API exposes no `DELETE /{id}` and no
- * re-analyse route, so offering either would be a button that 404s.
+ * delete affordance: the tender API exposes no `DELETE /{id}`, so offering one
+ * would be a button that 404s.
+ *
+ * **Retry lives here, not on the Processing page.** A run that failed has nothing
+ * left to watch, so it drops out of the Processing queue entirely and comes to
+ * rest in this list — which makes this the only place it can be picked back up.
+ * The Retry action posts to `POST /tenders/{id}/reprocess`, which resets the row
+ * to `uploaded` and re-enqueues the pipeline; every stage clears its own previous
+ * rows, so a retry replaces the failed attempt rather than stacking on it. Only
+ * failed rows get the action — a running tender would 409, and a finished one has
+ * no reason to be re-read from a listing.
  *
  * **Where the numbers come from — and why the filter is different from Documents.**
  * The library page reads its four figures from a separate `GET /stats` call, so a
@@ -38,13 +47,16 @@ import {
   tenderTitle,
 } from '@/models/tenders'
 import type { TenderListItem, TenderStatus } from '@/models/tenders'
-import { listTenders } from '@/services/tenderService'
+import { deleteTender, listTenders, reprocessTender } from '@/services/tenderService'
 import { formatCount, formatShortDate } from '@/lib/formatting'
 import { useAsyncData } from '@/hooks/useAsyncData'
+import { errorMessage } from '@/lib/apiClient'
+import { AlertMessage } from '@/components/feedback/AlertMessage'
 import { Panel } from '@/components/dashboard/Panel'
 import { DataTable, TableEmptyState } from '@/components/ui/DataTable'
 import type { Column } from '@/components/ui/DataTable'
 import { ActionButton, IconAction } from '@/components/ui/ActionButton'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   AsyncSection,
   ErrorBlock,
@@ -61,6 +73,7 @@ import {
   RefreshIcon,
   SearchIcon,
   SpinnerIcon,
+  TrashIcon,
   UploadIcon,
   XCircleIcon,
 } from '@/components/ui/icons'
@@ -109,6 +122,14 @@ function searchHaystack(tender: TenderListItem): string {
 export function TenderOverviewPage() {
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
+  /* Per-row busy ids, so only the tender being acted on spins — a list-wide flag
+     would disable every other button for a request that has nothing to do with them. */
+  const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  /* The tender the delete-confirm dialog is asking about. `null` closes the dialog.
+     Held as the full row so the confirm sentence can name the file, not just an id. */
+  const [pendingDelete, setPendingDelete] = useState<TenderListItem | null>(null)
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   /*
    * One read, no dependencies. Both filters run on the client (see the file
@@ -201,6 +222,58 @@ export function TenderOverviewPage() {
     setStatus('all')
   }
 
+  /**
+   * Re-runs the pipeline for a settled tender and refetches the list so the row
+   * moves to `uploaded` on screen. The refetch is what changes the status pill;
+   * the response is not written into the table directly, because the list read is
+   * the single source of truth for these rows and two writers would drift. Same
+   * endpoint (`/reprocess`) for both the failure "Retry" and the finished-run
+   * "Reanalyse" — the backend is idempotent about the previous attempt's rows.
+   */
+  async function retryTender(tender: TenderListItem) {
+    setRetryingId(tender.id)
+    setNotice(null)
+
+    try {
+      await reprocessTender(tender.id)
+      setNotice({
+        tone: 'success',
+        text: `"${tenderTitle(tender)}" was queued for analysis again. Follow it on the Processing page.`,
+      })
+      tenders.refetch()
+    } catch (error) {
+      setNotice({ tone: 'error', text: errorMessage(error) })
+    } finally {
+      setRetryingId(null)
+    }
+  }
+
+  /**
+   * Deletes a tender and everything it points at — DB rows, source PDF, output
+   * folder and zip. Refetches the list so the row disappears; also drops the
+   * failure record it may have carried into the Processing page's error log,
+   * which reads from the same list. Best-effort file cleanup is on the server
+   * side — the API returns 204 on success.
+   */
+  async function performDelete(tender: TenderListItem) {
+    setDeletingId(tender.id)
+    setNotice(null)
+
+    try {
+      await deleteTender(tender.id)
+      setNotice({
+        tone: 'success',
+        text: `"${tenderTitle(tender)}" and its output were deleted.`,
+      })
+      tenders.refetch()
+    } catch (error) {
+      setNotice({ tone: 'error', text: errorMessage(error) })
+    } finally {
+      setDeletingId(null)
+      setPendingDelete(null)
+    }
+  }
+
   const columns: Column<TenderListItem>[] = [
     {
       id: 'tender',
@@ -254,7 +327,7 @@ export function TenderOverviewPage() {
         tender.extracted_requirements_count > 0 ? (
           formatCount(tender.extracted_requirements_count)
         ) : (
-          <span className="text-neutral-400">—</span>
+          <span className="text-neutral-400">-</span>
         ),
     },
     {
@@ -270,7 +343,7 @@ export function TenderOverviewPage() {
             {formatShortDate(tender.submission_deadline)}
           </time>
         ) : (
-          <span className="text-neutral-400">—</span>
+          <span className="text-neutral-400">-</span>
         ),
     },
     {
@@ -282,8 +355,78 @@ export function TenderOverviewPage() {
         tender.issuing_authority ? (
           <span className="block max-w-[16rem] truncate">{tender.issuing_authority}</span>
         ) : (
-          <span className="text-neutral-400">—</span>
+          <span className="text-neutral-400">-</span>
         ),
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      className: 'w-px',
+      /*
+       * Two controls, decided per row:
+       *
+       * - **Reanalyse** for any *settled* tender (failed, ready-for-review, or
+       *   finalized) — the pipeline is idempotent, so re-running is the same
+       *   button whether the previous run failed ("Retry") or finished but the
+       *   reviewer wants it read again with different evidence in the library
+       *   ("Reanalyse"). Not offered while a run is in flight, because the
+       *   backend refuses that with a 409 — stopping it first is what the
+       *   Processing page's Stop button is for.
+       * - **Delete** for every row, at any status. A stuck run is the case a
+       *   Delete button exists for, so the button gates on nothing and pops a
+       *   confirm dialog to catch a slip. The trash icon is destructive-toned;
+       *   the label collapses at narrow widths but the accessible name stays.
+       *
+       * `flex-nowrap` so a narrow column keeps the two buttons on one line rather
+       * than stacking them and forcing the row taller. */
+      cell: (tender) => {
+        const isRetrying = retryingId === tender.id
+        const isDeleting = deletingId === tender.id
+        const canReanalyse = !isInFlight(tender.status)
+        const reanalyseLabel = tender.status === 'failed' ? 'Retry' : 'Reanalyse'
+
+        return (
+          <div className="flex flex-nowrap items-center justify-end gap-1.5">
+            {canReanalyse ? (
+              <ActionButton
+                variant="secondary"
+                size="sm"
+                disabled={isRetrying || isDeleting}
+                leadingIcon={
+                  isRetrying ? (
+                    <SpinnerIcon className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshIcon className="size-4" />
+                  )
+                }
+                onClick={() => {
+                  void retryTender(tender)
+                }}
+                hideLabelOnMobile
+              >
+                {isRetrying ? 'Working' : reanalyseLabel}
+              </ActionButton>
+            ) : null}
+
+            <ActionButton
+              variant="danger"
+              size="sm"
+              disabled={isRetrying || isDeleting}
+              leadingIcon={
+                isDeleting ? (
+                  <SpinnerIcon className="size-4 animate-spin" />
+                ) : (
+                  <TrashIcon className="size-4" />
+                )
+              }
+              onClick={() => setPendingDelete(tender)}
+              hideLabelOnMobile
+            >
+              {isDeleting ? 'Deleting' : 'Delete'}
+            </ActionButton>
+          </div>
+        )
+      },
     },
   ]
 
@@ -424,6 +567,8 @@ export function TenderOverviewPage() {
           </div>
         </div>
 
+        {notice ? <AlertMessage tone={notice.tone}>{notice.text}</AlertMessage> : null}
+
         {/* A refresh that failed over rows still on screen. They were true a moment
             ago, so they stay; only the claim of freshness goes. */}
         {tenders.status === 'error' && tenders.data !== null ? (
@@ -471,7 +616,7 @@ export function TenderOverviewPage() {
                 <TableEmptyState
                   icon={<FileTextIcon className="size-5" />}
                   title="No tenders yet"
-                  description="Upload a tender document and VR-Nexus will read it clause by clause — extracting requirements, matching your evidence, and scoring coverage."
+                  description="Upload a tender document and VR-Nexus will read it clause by clause - extracting requirements, matching your evidence, and scoring coverage."
                   action={
                     <ActionButton
                       to={ROUTES.tenderUpload}
@@ -503,6 +648,25 @@ export function TenderOverviewPage() {
           ) : null}
         </AsyncSection>
       </Panel>
+
+      {/* The confirm dialog for Delete lives at the page root, not inside the
+          Actions cell — the cell unmounts as the row re-sorts or the table filters,
+          which would tear down the dialog mid-answer. Rendered from `pendingDelete`
+          rather than a boolean so the sentence names the file being deleted. */}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete this tender?"
+        description={
+          pendingDelete
+            ? `"${tenderTitle(pendingDelete)}" and its extracted requirements, evidence matches, source PDF and output folder will be removed. This cannot be undone.`
+            : ''
+        }
+        confirmLabel={deletingId !== null ? 'Deleting…' : 'Delete tender'}
+        onConfirm={() => {
+          if (pendingDelete) void performDelete(pendingDelete)
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }
@@ -594,7 +758,7 @@ function SummaryFigure({
      visibly the same kind of affordance and only the destination differs. */
   const interactiveClasses = [
     'group flex w-full items-center gap-3 px-4 py-4 text-left transition-colors duration-150 sm:px-5',
-    active ? 'bg-brand-50/70 hover:bg-brand-50' : 'bg-surface hover:bg-surface-muted',
+    active ? 'bg-selected hover:bg-selected' : 'bg-surface hover:bg-surface-muted',
   ].join(' ')
 
   if (to) {

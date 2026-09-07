@@ -17,12 +17,14 @@ from __future__ import annotations
 import logging
 import re
 
+from app.core.config import get_settings
 from app.models.enums import DocumentCategory
 from app.services.library import llm
 from app.services.library.parsers import base
 from app.services.library.parsers.base import ParseResult, RawDoc
 
 logger = logging.getLogger(__name__)
+_settings = get_settings()
 
 # doc_type value -> keywords, weighted by how decisive each phrase is.
 DOC_TYPE_PATTERNS: dict[str, tuple[tuple[str, int], ...]] = {
@@ -144,9 +146,12 @@ def _llm_classify(text: str, filename: str) -> str:
         f"Document text:\n{sample}"
     )
 
+    # Mechanical classification, not reasoning - same cheap-model tier as tender
+    # extraction and auto-tagging (see llm.complete's docstring).
     result = llm.complete_json(
         prompt,
         system="You classify corporate compliance documents. Reply with JSON only.",
+        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
     )
     if not isinstance(result, dict):
         return ""

@@ -5,7 +5,7 @@
   "description": "Dev orchestration: run the VR-Nexus backend (Docker: api + postgres + redis) and frontend (Vite, :5173) together with one command.",
   "scripts": {
     "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"blue,green\" \"npm:dev:backend\" \"npm:dev:frontend\"",
-    "dev:backend": "docker compose up api",
+    "dev:backend": "docker compose up api worker",
     "dev:frontend": "cd myapp && npm run dev",
     "dev:down": "docker compose down",
     "migrate": "docker compose run --rm api alembic upgrade head",

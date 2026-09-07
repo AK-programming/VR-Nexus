@@ -204,7 +204,7 @@ function MetaRow({
     <div className="flex items-start justify-between gap-4 py-2.5">
       <dt className="shrink-0 text-xs font-medium text-neutral-500">{label}</dt>
       <dd className="flex min-w-0 items-center gap-1.5 text-right text-sm text-neutral-900">
-        <span className="min-w-0 break-words">{filled ? value : '—'}</span>
+        <span className="min-w-0 break-words">{filled ? value : '-'}</span>
         {inferred && filled ? (
           /* The title lives on a wrapper: every icon in this product is `aria-hidden`
              and takes only a className, which is what keeps the set consistent. A
@@ -401,7 +401,7 @@ function ExtractedContent({
       title="Contents"
       description={`${formatCount(ordered.length)} ${
         ordered.length === 1 ? 'passage' : 'passages'
-      } read out of this file — the same text the search matches on.`}
+      } read out of this file - the same text the search matches on.`}
       flush
     >
       {/*
@@ -742,7 +742,7 @@ function PdfPane({ documentId }: { documentId: string }) {
         </ActionButton>
 
         <p className="text-xs font-medium text-neutral-600 tabular-nums">
-          {numPages > 0 ? `${formatCount(pageNumber)} / ${formatCount(numPages)}` : '—'}
+          {numPages > 0 ? `${formatCount(pageNumber)} / ${formatCount(numPages)}` : '-'}
         </p>
 
         <ActionButton
@@ -1089,15 +1089,29 @@ export function PdfViewerPage() {
               and the primary action here, so a red panel would read as the most
               encouraged thing on screen. */}
           {document.training_error.trim() ? (
-            <div className="flex items-start gap-2.5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3.5">
-              <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-rose-700" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-rose-900">Indexing failed</p>
-                <p className="mt-1 text-xs leading-relaxed break-words text-rose-800">
-                  {document.training_error}
-                </p>
+            document.training_status === 'failed' ? (
+              <div className="flex items-start gap-2.5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3.5">
+                <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-rose-700" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-rose-900">Indexing failed</p>
+                  <p className="mt-1 text-xs leading-relaxed break-words text-rose-800">
+                    {document.training_error}
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* The document indexed fine; this is a parser NOTE (e.g. a PDF with no
+                 headings, so sections were inferred), not a failure. Amber, not red. */
+              <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5">
+                <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-amber-700" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-amber-900">Indexed with a note</p>
+                  <p className="mt-1 text-xs leading-relaxed break-words text-amber-800">
+                    {document.training_error}
+                  </p>
+                </div>
+              </div>
+            )
           ) : null}
         </div>
       </div>

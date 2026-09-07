@@ -55,7 +55,7 @@ function rejectionMessage(rejection: FileRejection): string {
   const code = rejection.errors[0]?.code
 
   if (code === 'file-too-large') {
-    return `${formatBytes(rejection.file.size)} — the limit is ${MAX_UPLOAD_MB} MB.`
+    return `${formatBytes(rejection.file.size)} - the limit is ${MAX_UPLOAD_MB} MB.`
   }
 
   if (code === 'file-invalid-type') {
@@ -107,8 +107,8 @@ export function DocumentDropzone({
               : isDragReject
                 ? 'border-rose-300 bg-rose-50'
                 : isDragActive
-                  ? 'border-brand-400 bg-brand-50'
-                  : 'border-neutral-300 bg-surface-muted hover:border-brand-400 hover:bg-brand-50/40',
+                  ? 'border-brand-400 bg-selected'
+                  : 'border-neutral-300 bg-surface-muted hover:border-brand-400 hover:bg-selected',
           ].join(' '),
         })}
       >

@@ -59,28 +59,32 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "BAAI/bge-base-en-v1.5"
     EMBEDDING_DIM: int = 768
 
-    GOOGLE_API_KEY: str = ""
-    LLM_LIGHT_MODEL: str = "gemini-1.5-flash"
-    LLM_HEAVY_MODEL: str = "gemini-1.5-pro"
-
-    # Section 6's LLM fallback for auto-tagging (metadata) and parsing edge
-    # cases - NOT used for embeddings. Left with no key so it's inert
-    # (llm_available is False) until the team makes a deliberate decision to
-    # enable it, given real tender/library documents may pass through whatever
-    # this points at. That upstream reasoning is why the base URL below is
-    # OpenAI's own rather than a router: whatever you set, set it knowingly.
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o-mini"
-    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-    OPENAI_USER_AGENT: str = ""
-    LLM_ENABLED: bool = True
-
-    # Used only by the tender requirement-extraction pipeline. Auth and the
-    # rest of the API can start without this optional integration configured.
-    # Point ANTHROPIC_BASE_URL at an Anthropic-compatible gateway (e.g.
-    # https://agentrouter.org — no /v1) when not calling api.anthropic.com.
+    # One provider for the whole app: Anthropic Claude, through its
+    # OpenAI-compatible endpoint. It powers tender requirement extraction
+    # (Stage 2), the Evidence Library assistant's grounded Ask, and library
+    # auto-tagging, all off the SAME ANTHROPIC_API_KEY. Embeddings are separate
+    # and local (see above); this key is not used for them. With
+    # ANTHROPIC_API_KEY empty the library assistant's generated answers are
+    # disabled (llm_available is False) and tender extraction cannot run.
+    # See ANTHROPIC_EXTRACTION_MODEL below for the cheaper model used on the
+    # high-volume, mechanical calls (extraction + tagging) versus this one.
     ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_BASE_URL: str = ""
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-5-20250929"
+    ANTHROPIC_BASE_URL: str = "https://api.anthropic.com/v1/"
+    ANTHROPIC_USER_AGENT: str = ""
+    LLM_ENABLED: bool = True
+    # Cost tiering: ANTHROPIC_MODEL is the "reasoning" model, used only where the
+    # call has to weigh evidence and write prose (the Evidence Library's grounded
+    # Ask). Tender requirement extraction and library auto-tagging are the opposite
+    # kind of call - mechanical, verbatim "copy this text into these JSON fields"
+    # work, run 100+ times per tender - so they use this cheaper model instead.
+    # Same ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL, just a different model id.
+    ANTHROPIC_EXTRACTION_MODEL: str = "claude-haiku-4-5-20251001"
+    # How many tender chunks to extract concurrently. Extraction is one LLM
+    # round-trip per chunk; running a few at once is the main speedup for a
+    # large tender. Keep it modest on Gemini's free tier, which rate-limits
+    # requests-per-minute and will 429 (then retry) if this is too high.
+    EXTRACTION_CONCURRENCY: int = 4
 
     # --- Section 6: Evidence Library chunking + upload limits ---
     CHUNK_TOKENS: int = 800
@@ -99,11 +103,39 @@ class Settings(BaseSettings):
 
     @property
     def llm_available(self) -> bool:
-        return self.LLM_ENABLED and bool(self.OPENAI_API_KEY)
+        return self.LLM_ENABLED and bool(self.ANTHROPIC_API_KEY)
 
     @property
     def max_upload_bytes(self) -> int:
         return self.MAX_UPLOAD_MB * 1024 * 1024
+
+    # --- Support / outbound email ---
+    # When a tender fails, a non-technical user can press "Contact technical
+    # support" on the error log; the backend emails the full error here. SMTP
+    # defaults target Gmail (STARTTLS on 587). To enable sending, set
+    # SMTP_USERNAME and SMTP_PASSWORD in backend/.env — for Gmail that PASSWORD
+    # must be an App Password (16 chars, no spaces), NOT the account password,
+    # and the account needs 2-Step Verification on. With either credential empty
+    # the endpoint reports "support email is not configured" instead of sending,
+    # and the UI falls back to a plain mailto: link to SUPPORT_EMAIL.
+    SUPPORT_EMAIL: str = "engrak2155@gmail.com"
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    # Envelope From. Defaults to SMTP_USERNAME (see smtp_from). Gmail rewrites a
+    # mismatched From to the authenticated account anyway, so this mostly matters
+    # for a self-hosted relay.
+    SMTP_FROM: str = ""
+    SMTP_USE_TLS: bool = True
+
+    @property
+    def smtp_from(self) -> str:
+        return self.SMTP_FROM or self.SMTP_USERNAME
+
+    @property
+    def support_email_configured(self) -> bool:
+        return bool(self.SMTP_USERNAME and self.SMTP_PASSWORD and self.SUPPORT_EMAIL)
 
     # --- App ---
     ENVIRONMENT: str = "development"

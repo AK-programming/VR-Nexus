@@ -121,7 +121,9 @@ export function useJobProgress(jobId: string | null, options: UseJobProgressOpti
 
       const tick = async () => {
         try {
-          const next = await getJob(jobId, { signal: controller.signal })
+          // jobId is non-null here: the effect returns early when it is null; the
+          // guard's narrowing does not reach into this nested async closure.
+          const next = await getJob(jobId!, { signal: controller.signal })
           consecutiveFailures = 0
           record(next.stage, next)
 
