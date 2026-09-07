@@ -670,8 +670,6 @@ def reprocess_tender(
             "This tender is still being analysed. Stop it before retrying.",
         )
 
-    old_folder_path = tender.output_folder_path
-    old_zip_path = tender.output_zip_path
     tender.run_generation += 1
     tender.celery_task_id = None
     tender.status = TenderStatus.UPLOADED
@@ -684,22 +682,8 @@ def reprocess_tender(
     tender.error_detail = None
     tender.failed_at = None
     tender.support_requested_at = None
-    tender.output_folder_path = None
-    tender.output_zip_path = None
     db.commit()
     db.refresh(tender)
-
-    for path_str in (old_zip_path, old_folder_path):
-        if not path_str:
-            continue
-        try:
-            path = Path(path_str)
-            if path.is_dir():
-                shutil.rmtree(path, ignore_errors=True)
-            elif path.is_file():
-                path.unlink()
-        except OSError:
-            logger.exception("Failed to remove stale tender output at %s", path_str)
 
     publish_progress(
         str(tender.id), TenderStatus.UPLOADED,

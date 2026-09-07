@@ -252,13 +252,6 @@ def train(
     skipped: list[uuid.UUID] = []
 
     for document in documents:
-        document = db.execute(
-            select(Document)
-            .where(Document.id == document.id)
-            .with_for_update()
-        ).scalar_one_or_none()
-        if document is None:
-            continue
         if document.training_status == DocumentTrainingStatus.INDEXED and not force:
             skipped.append(document.id)
             continue
@@ -291,13 +284,6 @@ def retrain(
     Its own chunks are replaced; no other document is touched.
     """
     document = _get_document(db, document_id)
-    document = db.execute(
-        select(Document)
-        .where(Document.id == document_id)
-        .with_for_update()
-    ).scalar_one_or_none()
-    if document is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
     if document.training_status in _IN_FLIGHT:
         raise HTTPException(status.HTTP_409_CONFLICT, "This document is already being indexed.")
 
