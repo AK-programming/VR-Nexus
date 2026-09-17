@@ -29,12 +29,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_current_user
+from app.api.deps import require_feature
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.document import Document
 from app.models.enums import (
     EvaluationImpact,
+    FeatureKey,
     MatchReviewStatus,
     MatchType,
     TenderStatus,
@@ -43,6 +44,10 @@ from app.models.requirement import Requirement, RequirementEvidenceMatch
 from app.models.tender import Tender
 from app.models.user import User
 from app.schemas.tender import (
+    BulkAcceptRequest,
+    BulkAcceptResult,
+    BulkRejectRequest,
+    BulkRejectResult,
     EvidenceMatchOut,
     ImpactBreakdown,
     MatchReviewUpdate,
@@ -54,6 +59,8 @@ from app.schemas.tender import (
     TenderUploadResponse,
     WsTicketOut,
 )
+from app.schemas.usage import TenderUsageOut
+from app.services.usage_tracking import compute_tender_usage
 from app.services.progress import publish_progress
 from app.services.tender_storage import save_tender_file, validate_tender_upload
 from app.services.ws_tickets import issue_ticket
@@ -145,7 +152,7 @@ def _safe_filename(name: str) -> str:
 @router.post("", response_model=TenderUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_tender(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderUploadResponse:
     """Validate + store the PDF, create the Tender row, enqueue the pipeline.
@@ -191,7 +198,7 @@ def list_tenders(
     tender_status: TenderStatus | None = Query(None, alias="status"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> list[TenderListItem]:
     stmt = select(Tender).order_by(Tender.created_at.desc())
@@ -204,7 +211,7 @@ def list_tenders(
 @router.get("/{tender_id}", response_model=TenderOut)
 def get_tender(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderOut:
     return _tender_out(_get_tender(db, tender_id))
@@ -213,7 +220,7 @@ def get_tender(
 @router.post("/{tender_id}/ws-ticket", response_model=WsTicketOut)
 def create_tender_ws_ticket(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> WsTicketOut:
     """Mint a one-shot ticket for /ws/tenders/{tender_id}/progress.
@@ -232,7 +239,7 @@ def create_tender_ws_ticket(
 def update_tender(
     tender_id: uuid.UUID,
     payload: TenderUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderOut:
     """Edit tender metadata (the fields the LLM fills best-effort, plus name and
@@ -256,13 +263,13 @@ def list_requirements(
     tender_id: uuid.UUID,
     is_mandatory: bool | None = Query(None),
     evaluation_impact: EvaluationImpact | None = Query(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> list[RequirementOut]:
     _get_tender(db, tender_id)
     stmt = (
         select(Requirement)
-        .where(Requirement.tender_id == tender_id)
+        .where(Requirement.tender_id == tender_id, Requirement.duplicate_of_id.is_(None))
         .options(selectinload(Requirement.evidence_matches))
         .order_by(Requirement.page_number, Requirement.created_at)
     )
@@ -288,14 +295,14 @@ def list_matches(
     tender_id: uuid.UUID,
     match_type: MatchType | None = Query(None),
     review_status: MatchReviewStatus | None = Query(None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> list[EvidenceMatchOut]:
     _get_tender(db, tender_id)
     stmt = (
         select(RequirementEvidenceMatch)
         .join(Requirement, RequirementEvidenceMatch.requirement_id == Requirement.id)
-        .where(Requirement.tender_id == tender_id)
+        .where(Requirement.tender_id == tender_id, Requirement.duplicate_of_id.is_(None))
         .options(
             selectinload(RequirementEvidenceMatch.requirement),
             selectinload(RequirementEvidenceMatch.document),
@@ -314,7 +321,7 @@ def review_match(
     tender_id: uuid.UUID,
     match_id: uuid.UUID,
     payload: MatchReviewUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> EvidenceMatchOut:
     """Accept / reject / reassign one evidence match (TN-MTC-05)."""
@@ -358,13 +365,83 @@ def review_match(
     return _match_out(match)
 
 
+@router.post("/{tender_id}/matches/bulk-accept", response_model=BulkAcceptResult)
+def bulk_accept_matches(
+    tender_id: uuid.UUID,
+    payload: BulkAcceptRequest,
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
+    db: Session = Depends(get_db),
+) -> BulkAcceptResult:
+    """Accept every PENDING match for this tender at or above `min_confidence`
+    in one action (TN-MTC-05's bulk complement to reviewing rows one at a
+    time) — for a reviewer who has decided a whole confidence band is trustworthy
+    rather than clicking through it row by row. Each match is still accepted
+    individually (same review_status/reviewed_by/reviewed_at fields a single
+    accept sets, same reversibility via reject/reassign afterwards) — this
+    only saves the clicking, not the audit trail."""
+    _get_tender(db, tender_id)
+    stmt = (
+        select(RequirementEvidenceMatch)
+        .join(Requirement, RequirementEvidenceMatch.requirement_id == Requirement.id)
+        .where(
+            Requirement.tender_id == tender_id,
+            Requirement.duplicate_of_id.is_(None),
+            RequirementEvidenceMatch.review_status == MatchReviewStatus.PENDING,
+            RequirementEvidenceMatch.confidence_score.is_not(None),
+            RequirementEvidenceMatch.confidence_score >= payload.min_confidence,
+        )
+    )
+    matches = db.execute(stmt).scalars().all()
+    now = datetime.now(timezone.utc)
+    for match in matches:
+        match.review_status = MatchReviewStatus.ACCEPTED
+        match.reviewed_by = current_user.id
+        match.reviewed_at = now
+    db.commit()
+    return BulkAcceptResult(accepted_count=len(matches))
+
+
+@router.post("/{tender_id}/matches/bulk-reject", response_model=BulkRejectResult)
+def bulk_reject_matches(
+    tender_id: uuid.UUID,
+    payload: BulkRejectRequest,
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
+    db: Session = Depends(get_db),
+) -> BulkRejectResult:
+    """Reject every PENDING match for this tender at or below `max_confidence`
+    in one action — the mirror of bulk-accept, for the weak end of the queue.
+    Same per-row audit fields a single reject sets, same reversibility
+    (a reviewer can still reassign a rejected match to a different document
+    afterwards)."""
+    _get_tender(db, tender_id)
+    stmt = (
+        select(RequirementEvidenceMatch)
+        .join(Requirement, RequirementEvidenceMatch.requirement_id == Requirement.id)
+        .where(
+            Requirement.tender_id == tender_id,
+            Requirement.duplicate_of_id.is_(None),
+            RequirementEvidenceMatch.review_status == MatchReviewStatus.PENDING,
+            RequirementEvidenceMatch.confidence_score.is_not(None),
+            RequirementEvidenceMatch.confidence_score <= payload.max_confidence,
+        )
+    )
+    matches = db.execute(stmt).scalars().all()
+    now = datetime.now(timezone.utc)
+    for match in matches:
+        match.review_status = MatchReviewStatus.REJECTED
+        match.reviewed_by = current_user.id
+        match.reviewed_at = now
+    db.commit()
+    return BulkRejectResult(rejected_count=len(matches))
+
+
 # --------------------------------------------------------------------------- #
 # report                                                                      #
 # --------------------------------------------------------------------------- #
 @router.get("/{tender_id}/report", response_model=TenderReportOut)
 def get_report(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderReportOut:
     """Computed report: marks available vs. captured, coverage, mandatory split,
@@ -373,7 +450,7 @@ def get_report(
     tender = _get_tender(db, tender_id)
     requirements = db.execute(
         select(Requirement)
-        .where(Requirement.tender_id == tender_id)
+        .where(Requirement.tender_id == tender_id, Requirement.duplicate_of_id.is_(None))
         .options(selectinload(Requirement.evidence_matches))
     ).scalars().all()
 
@@ -464,13 +541,34 @@ def get_report(
     )
 
 
+@router.get("/{tender_id}/usage", response_model=TenderUsageOut)
+def get_tender_usage(
+    tender_id: uuid.UUID,
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
+    db: Session = Depends(get_db),
+) -> TenderUsageOut:
+    """What this tender's own Anthropic API calls cost and how long they took:
+    every per-chunk extraction call plus the one tender-metadata call, both
+    recorded via services/usage_tracking.record_usage with tender_id=this
+    tender. Any regular tender-analysis user can see this for their own
+    tenders - unlike the admin-only global Usage page, this is scoped to
+    one tender and carries no other user's data.
+
+    The computation itself lives in services/usage_tracking.compute_tender_usage,
+    shared with the ZIP package's bundled api_usage_report.xlsx (see
+    tasks/tender_pipeline.py's _assemble_folder) so the badge here and the
+    downloaded report can never disagree about the same tender."""
+    tender = _get_tender(db, tender_id)
+    return compute_tender_usage(db, tender.id)
+
+
 # --------------------------------------------------------------------------- #
 # files                                                                       #
 # --------------------------------------------------------------------------- #
 @router.get("/{tender_id}/file")
 def get_tender_file(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     """Serve the source PDF inline for the in-browser viewer.
@@ -503,7 +601,7 @@ def get_tender_file(
 @router.get("/{tender_id}/download")
 def download_output(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     """Stream the assembled output zip (TN-OUT-04)."""
@@ -534,7 +632,7 @@ def download_output(
 @router.post("/{tender_id}/finalize", response_model=TenderOut)
 def finalize_tender(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderOut:
     """Lock in the reviewed analysis (TN-OUT-05).
@@ -574,7 +672,7 @@ def finalize_tender(
 @router.post("/{tender_id}/cancel", response_model=TenderOut)
 def cancel_tender(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderOut:
     """Stop a tender that is still being analysed.
@@ -639,7 +737,7 @@ def cancel_tender(
 @router.post("/{tender_id}/reprocess", response_model=TenderOut)
 def reprocess_tender(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderOut:
     """Run the analysis pipeline again for a tender that failed or was stopped.
@@ -682,6 +780,7 @@ def reprocess_tender(
     tender.error_detail = None
     tender.failed_at = None
     tender.support_requested_at = None
+    tender.extraction_warnings = None
     db.commit()
     db.refresh(tender)
 
@@ -699,7 +798,7 @@ def reprocess_tender(
 @router.delete("/{tender_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 def delete_tender(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> None:
     """Delete a tender and everything on disk that belongs to it.
@@ -752,7 +851,7 @@ def delete_tender(
 @router.post("/{tender_id}/report-issue", response_model=TenderOut)
 def report_tender_issue(
     tender_id: uuid.UUID,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature(FeatureKey.TENDER_ANALYSIS)),
     db: Session = Depends(get_db),
 ) -> TenderOut:
     """Record that a user has handed a failed tender to the support team.

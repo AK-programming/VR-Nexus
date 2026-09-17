@@ -27,6 +27,44 @@ export const USER_ROLES = ['admin', 'user'] as const
 export type UserRole = (typeof USER_ROLES)[number]
 
 /* -------------------------------------------------------------------------- */
+/* Feature access                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Matches backend `FeatureKey(str, enum.Enum)` (app/models/enums.py) — the
+ * optional sections a USER account can be granted, one at a time, from the
+ * admin-only Users page. An ADMIN account is never checked against this list:
+ * `require_feature` on the backend and `selectIsAdmin` on this side both treat
+ * role === admin as unconditional access, so this only ever gates a USER.
+ *
+ * Written as an `as const` array for the same reason `USER_ROLES` is — enums
+ * cannot be stripped by Vite's transpiler under `erasableSyntaxOnly`, and this
+ * array doubles as the label source the Users page iterates over.
+ */
+export const FEATURE_KEYS = [
+  'documents',
+  'documents_upload',
+  'ai_assistant',
+  'tender_analysis',
+  'tender_tools',
+] as const
+
+export type FeatureKey = (typeof FEATURE_KEYS)[number]
+
+/** What the Users page shows next to each checkbox. */
+export const FEATURE_LABELS: Record<FeatureKey, string> = {
+  documents: 'Documents',
+  documents_upload: 'Documents (upload only)',
+  ai_assistant: 'AI Assistant',
+  tender_analysis: 'Tender Analysis',
+  tender_tools: 'Tender Tools',
+}
+
+export function isFeatureKey(value: unknown): value is FeatureKey {
+  return typeof value === 'string' && (FEATURE_KEYS as readonly string[]).includes(value)
+}
+
+/* -------------------------------------------------------------------------- */
 /* Field limits                                                               */
 /* -------------------------------------------------------------------------- */
 
@@ -98,7 +136,28 @@ export function normalizeUserRole(value: unknown): UserRole {
  */
 export function normalizeUser(user: User): User {
   const role = normalizeUserRole(user.role)
-  return role === user.role ? user : { ...user, role }
+  const featureAccess = normalizeFeatureAccess(user.feature_access)
+
+  if (role === user.role && featureAccess === user.feature_access) {
+    return user
+  }
+
+  return { ...user, role, feature_access: featureAccess }
+}
+
+/**
+ * Drops anything the wire sent that this build does not recognise as a
+ * `FeatureKey`, so a stale checkbox never renders "granted" for a section the
+ * frontend cannot even show. Returns the original array when nothing needed
+ * dropping, matching `normalizeUser`'s no-op-preserves-identity convention.
+ */
+function normalizeFeatureAccess(value: unknown): FeatureKey[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const filtered = value.filter(isFeatureKey)
+  return filtered.length === value.length ? (value as FeatureKey[]) : filtered
 }
 
 /* -------------------------------------------------------------------------- */
@@ -152,6 +211,19 @@ export interface ResetPasswordRequest {
   new_password: string
 }
 
+/** POST /api/auth/verify-email — the `?token=` value from the confirmation
+ * link register() emails. */
+export interface VerifyEmailRequest {
+  token: string
+}
+
+/** POST /api/auth/resend-verification — re-sends the confirmation link,
+ * reached from the sign-in screen once a login attempt comes back
+ * `unverified` (see AuthErrorKind above). */
+export interface ResendVerificationRequest {
+  email: string
+}
+
 /** Backend `MessageOut` - the shape both forgot-password and reset-password
  * respond with on success. Just a sentence meant to be shown as-is. */
 export interface MessageResponse {
@@ -176,6 +248,13 @@ export interface User {
   role: UserRole
   is_active: boolean
   last_login_at: string | null
+  /**
+   * Which optional sections this account can reach — empty for a fresh USER,
+   * and not consulted at all for an ADMIN, whose access is unconditional (see
+   * `selectIsAdmin`). Rides along on login/me/register/refresh so the sidebar
+   * can filter itself without a second request.
+   */
+  feature_access: FeatureKey[]
 }
 
 /** Backend `TokenResponse`. Returned by login and refresh — but not register. */
@@ -290,6 +369,7 @@ export type AuthErrorKind =
   | 'expired' /* the stored session ran out; nothing was typed wrong */
   | 'locked' /* 423 — too many failed attempts */
   | 'disabled' /* 403 — account switched off by an admin */
+  | 'unverified' /* 403, code "email_not_verified" — hasn't clicked the confirmation link yet */
   | 'conflict' /* 409 — email already registered */
   | 'validation' /* 422 — the server rejected a field */
   | 'offline' /* the request never reached the server */

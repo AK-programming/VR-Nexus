@@ -7,3 +7,5 @@
  * into two statements that then have to be kept in sync by hand.
  */
 export * from './auth'
+export * from './admin'
+export * from './usage'

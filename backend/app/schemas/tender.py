@@ -12,7 +12,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.enums import (
     EvaluationImpact,
@@ -94,6 +94,11 @@ class TenderListItem(BaseModel):
     # Set once the failure was emailed to support; flips the UI to "reported".
     support_requested_at: Optional[datetime] = None
 
+    # Set when one or more extraction chunks failed and were dropped rather
+    # than failing the whole run - names the page ranges that may be
+    # incomplete. Null when every chunk succeeded.
+    extraction_warnings: Optional[str] = None
+
     model_config = {"from_attributes": True}
 
 
@@ -137,6 +142,11 @@ class TenderOut(BaseModel):
     # Set once the failure was emailed to support; flips the UI to "reported".
     support_requested_at: Optional[datetime] = None
 
+    # Set when one or more extraction chunks failed and were dropped rather
+    # than failing the whole run - names the page ranges that may be
+    # incomplete. Null when every chunk succeeded. Also written into the
+    # Excel Summary sheet and summary.json by _assemble_folder.
+    extraction_warnings: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -219,6 +229,39 @@ class MatchReviewUpdate(BaseModel):
     """
     action: Literal["accept", "reject", "reassign"]
     document_id: Optional[uuid.UUID] = None
+
+
+class BulkAcceptRequest(BaseModel):
+    """POST /api/tenders/{id}/matches/bulk-accept.
+
+    Accepts every PENDING match at or above `min_confidence` in one action —
+    the "clear the review queue" complement to reviewing rows one at a time.
+    A reviewer picks the cutoff each time rather than the pipeline picking it
+    once at extraction time, because "good enough to trust without looking"
+    is a per-tender, per-reviewer judgement call, not a fixed constant.
+    """
+    min_confidence: float = Field(ge=0.0, le=1.0)
+
+
+class BulkAcceptResult(BaseModel):
+    accepted_count: int
+
+
+class BulkRejectRequest(BaseModel):
+    """POST /api/tenders/{id}/matches/bulk-reject.
+
+    The mirror image of bulk-accept: dismisses every PENDING match at or
+    BELOW `max_confidence` in one action, for the weak end of the queue a
+    reviewer has decided isn't worth opening one by one either (a rejected
+    match is not "no evidence" — the requirement just goes back to needing a
+    document reassigned or attached by hand, same as rejecting one match
+    individually).
+    """
+    max_confidence: float = Field(ge=0.0, le=1.0)
+
+
+class BulkRejectResult(BaseModel):
+    rejected_count: int
 
 
 class ImpactBreakdown(BaseModel):

@@ -1,0 +1,13 @@
+{
+ "smeda_dashboard": {
+  "gold": "smeda_dashboard",
+  "gold_rows": 57,
+  "emitted_rows": 686,
+  "ratio": 12.035,
+  "recall": 0.7018,
+  "precision": 0.0583,
+  "f1": 0.1077,
+  "marks_total": 222.0,
+  "marks_stated": 100
+ }
+}

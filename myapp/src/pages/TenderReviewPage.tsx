@@ -28,20 +28,27 @@ import {
   isInFlight,
   tenderTitle,
 } from '@/models/tenders'
-import type { EvidenceMatch, MatchReviewAction } from '@/models/tenders'
+import type { EvidenceMatch, ExcelTemplate, MatchReviewAction } from '@/models/tenders'
 import {
+  bulkAcceptMatches,
+  bulkRejectMatches,
   finalizeTender,
   getReport,
   getTender,
+  getMyExcelTemplate,
+  getTenderExcelTemplate,
+  getTenderUsage,
   listMatches,
   listRequirements,
   reviewMatch,
+  setMyExcelTemplate,
+  setTenderExcelTemplate,
   fetchTenderOutputObjectUrl,
   releaseObjectUrl,
 } from '@/services/tenderService'
 import { useAsyncData } from '@/hooks/useAsyncData'
 import { errorMessage } from '@/lib/apiClient'
-import { formatCount, formatRelativeTime } from '@/lib/formatting'
+import { formatCostUsd, formatCount, formatDurationMs, formatRelativeTime } from '@/lib/formatting'
 import { Panel } from '@/components/dashboard/Panel'
 import { ActionButton } from '@/components/ui/ActionButton'
 import { AlertMessage } from '@/components/feedback/AlertMessage'
@@ -55,11 +62,13 @@ import {
 } from '@/components/tender/RequirementReviewCard'
 import type { CoverageState } from '@/components/tender/RequirementReviewCard'
 import { ReassignDialog } from '@/components/tender/ReassignDialog'
+import { ExcelTemplateCustomizer } from '@/components/tender/ExcelTemplateCustomizer'
 import {
   ChevronDownIcon,
   ChevronLeftIcon,
   ClipboardCheckIcon,
   DownloadIcon,
+  SettingsIcon,
   ShieldCheckIcon,
 } from '@/components/ui/icons'
 
@@ -116,6 +125,30 @@ export function TenderReviewPage() {
   const [filter, setFilter] = useState<ReviewFilter>('all')
   const [showNarrative, setShowNarrative] = useState(false)
 
+  /* Bulk-accept: clear the review queue by confidence band instead of
+     clicking "Accept" on each row. `bulkAcceptPercent` is the cutoff shown in
+     the input (0-100, more natural to type than a 0-1 fraction); it is only
+     ever sent once the reviewer clicks the button. */
+  const [bulkAcceptPercent, setBulkAcceptPercent] = useState(65)
+  const [bulkAccepting, setBulkAccepting] = useState(false)
+  const [bulkAcceptResult, setBulkAcceptResult] = useState<string | null>(null)
+
+  /* Same idea, the other direction: dismiss the weak end of the queue
+     (at or below the cutoff) instead of the confident end. */
+  const [bulkRejectPercent, setBulkRejectPercent] = useState(45)
+  const [bulkRejecting, setBulkRejecting] = useState(false)
+  const [bulkRejectResult, setBulkRejectResult] = useState<string | null>(null)
+
+  /* Excel export customization ("is this format OK?") — the banner is a soft
+     nudge, dismissible for this visit, not a hard gate: finalize is never
+     blocked on it, since the client's own answer was "if not, they will
+     customize it", not "they must". */
+  const [formatBannerDismissed, setFormatBannerDismissed] = useState(false)
+  const [showExcelCustomizer, setShowExcelCustomizer] = useState(false)
+  const [excelTemplate, setExcelTemplate] = useState<ExcelTemplate | null>(null)
+  const [excelTemplateBusy, setExcelTemplateBusy] = useState(false)
+  const [excelTemplateError, setExcelTemplateError] = useState<string | null>(null)
+
   const detail = useAsyncData(
     async (signal) => {
       const [tender, requirements, matches, report] = await Promise.all([
@@ -126,6 +159,16 @@ export function TenderReviewPage() {
       ])
       return { tender, requirements, matches, report }
     },
+    [tenderId],
+  )
+
+  /* Kept separate from `detail` above rather than folded into its
+     Promise.all: this tender's own extraction cost is a nice-to-have badge,
+     not part of the coherent review picture those four reads make up, so a
+     usage-endpoint hiccup should never blank the review screen the way a
+     failed report or requirements read would. */
+  const usage = useAsyncData(
+    (signal) => getTenderUsage(tenderId, { signal }),
     [tenderId],
   )
 
@@ -191,6 +234,44 @@ export function TenderReviewPage() {
     }
   }
 
+  async function handleBulkAccept() {
+    setBulkAccepting(true)
+    setActionError(null)
+    setBulkAcceptResult(null)
+    try {
+      const { accepted_count } = await bulkAcceptMatches(tenderId, bulkAcceptPercent / 100)
+      setBulkAcceptResult(
+        accepted_count > 0
+          ? `Accepted ${formatCount(accepted_count)} pending match${accepted_count === 1 ? '' : 'es'} at ${bulkAcceptPercent}% confidence or higher.`
+          : `No pending matches are at ${bulkAcceptPercent}% confidence or higher, nothing to accept.`,
+      )
+      detail.refetch()
+    } catch (error) {
+      setActionError(errorMessage(error))
+    } finally {
+      setBulkAccepting(false)
+    }
+  }
+
+  async function handleBulkReject() {
+    setBulkRejecting(true)
+    setActionError(null)
+    setBulkRejectResult(null)
+    try {
+      const { rejected_count } = await bulkRejectMatches(tenderId, bulkRejectPercent / 100)
+      setBulkRejectResult(
+        rejected_count > 0
+          ? `Rejected ${formatCount(rejected_count)} pending match${rejected_count === 1 ? '' : 'es'} at ${bulkRejectPercent}% confidence or lower.`
+          : `No pending matches are at ${bulkRejectPercent}% confidence or lower, nothing to reject.`,
+      )
+      detail.refetch()
+    } catch (error) {
+      setActionError(errorMessage(error))
+    } finally {
+      setBulkRejecting(false)
+    }
+  }
+
   async function handleFinalize() {
     setFinalizing(true)
     setActionError(null)
@@ -222,6 +303,60 @@ export function TenderReviewPage() {
     } finally {
       releaseObjectUrl(url)
       setDownloading(false)
+    }
+  }
+
+  /**
+   * Opens the customizer pre-filled with whatever already applies: this
+   * tender's own override if it has one, otherwise the account's saved
+   * default, otherwise nothing (the platform default layout).
+   */
+  async function handleOpenExcelCustomizer() {
+    setExcelTemplateError(null)
+    try {
+      const tenderTemplate = await getTenderExcelTemplate(tenderId)
+      if (tenderTemplate.template) {
+        setExcelTemplate(tenderTemplate.template)
+      } else {
+        const accountDefault = await getMyExcelTemplate()
+        setExcelTemplate(accountDefault.template)
+      }
+      setShowExcelCustomizer(true)
+    } catch (error) {
+      setActionError(errorMessage(error))
+    }
+  }
+
+  async function handleSaveExcelTemplate(template: ExcelTemplate, saveAsDefault: boolean) {
+    setExcelTemplateBusy(true)
+    setExcelTemplateError(null)
+    try {
+      await setTenderExcelTemplate(tenderId, template)
+      if (saveAsDefault) {
+        await setMyExcelTemplate(template)
+      }
+      setShowExcelCustomizer(false)
+      setFormatBannerDismissed(true)
+      detail.refetch()
+    } catch (error) {
+      setExcelTemplateError(errorMessage(error))
+    } finally {
+      setExcelTemplateBusy(false)
+    }
+  }
+
+  async function handleResetExcelTemplate() {
+    setExcelTemplateBusy(true)
+    setExcelTemplateError(null)
+    try {
+      await setTenderExcelTemplate(tenderId, null)
+      setShowExcelCustomizer(false)
+      setFormatBannerDismissed(true)
+      detail.refetch()
+    } catch (error) {
+      setExcelTemplateError(errorMessage(error))
+    } finally {
+      setExcelTemplateBusy(false)
     }
   }
 
@@ -343,6 +478,16 @@ export function TenderReviewPage() {
             <ActionButton
               variant="secondary"
               size="md"
+              leadingIcon={<SettingsIcon />}
+              onClick={handleOpenExcelCustomizer}
+            >
+              Excel format
+            </ActionButton>
+          ) : null}
+          {tender.has_output ? (
+            <ActionButton
+              variant="secondary"
+              size="md"
               leadingIcon={<DownloadIcon />}
               disabled={downloading}
               onClick={handleDownload}
@@ -363,11 +508,28 @@ export function TenderReviewPage() {
         </div>
       </div>
 
-      {finalized ? (
-        <AlertMessage tone="success" title="This tender is finalized">
-          The output folder was assembled from the reviewed matches
-          {tender.finalized_at ? ` ${formatRelativeTime(tender.finalized_at)}` : ''}. Re-finalize
-          after any further changes to rebuild it.
+      {tender.extraction_warnings ? (
+        <AlertMessage tone="warning" title="Some pages may be incomplete">
+          {tender.extraction_warnings}
+        </AlertMessage>
+      ) : null}
+
+      {ready && tender.has_output && !formatBannerDismissed ? (
+        <AlertMessage tone="info" title="Is this Excel format OK?">
+          Check the tracker&apos;s column layout before you finalize. You can change what
+          columns show, their order, and add your own before downloading.{' '}
+          <span className="mt-1 inline-flex flex-wrap gap-2 align-middle">
+            <ActionButton variant="secondary" size="sm" onClick={handleOpenExcelCustomizer}>
+              Customize format
+            </ActionButton>
+            <ActionButton
+              variant="secondary"
+              size="sm"
+              onClick={() => setFormatBannerDismissed(true)}
+            >
+              Looks good
+            </ActionButton>
+          </span>
         </AlertMessage>
       ) : null}
 
@@ -378,7 +540,7 @@ export function TenderReviewPage() {
       ) : null}
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatTile
           label="Requirements"
           value={formatCount(report.requirements_total)}
@@ -402,11 +564,30 @@ export function TenderReviewPage() {
           hint="no evidence yet"
           tone={report.requirements_without_evidence > 0 ? 'rose' : 'emerald'}
         />
+        {/* Estimated Anthropic API cost of THIS tender's own extraction +
+            metadata calls (see backend's GET /{id}/usage). A missing/empty
+            read (still processing, or the usage table has nothing for this
+            tender yet) renders a dash rather than hiding the tile, so the
+            summary strip's layout does not jump once the data arrives. */}
+        <StatTile
+          label="Est. API cost"
+          value={usage.data ? formatCostUsd(usage.data.cost_usd) : '-'}
+          hint={
+            usage.data
+              ? `${formatCount(usage.data.total_calls)} calls · ${formatDurationMs(usage.data.total_latency_ms)}`
+              : 'Anthropic usage'
+          }
+        />
       </div>
 
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+      {/* Full width, stacked (client follow-up request): Requirements & evidence
+          first, Coverage by evaluation underneath — both stretch to fill the
+          screen instead of splitting it into a wide column plus a narrow
+          sidebar, and both are accordions (collapsible) so either can be
+          tucked away without losing the other. */}
+      <div className="flex flex-col gap-4">
         {/* Requirements + review */}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 w-full">
           <Panel
             title="Requirements & evidence"
             description={
@@ -424,8 +605,12 @@ export function TenderReviewPage() {
                     aria-pressed={filter === option.value}
                     className={[
                       'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-150',
+                      /* Selected tab is red, not just "the white one" — this
+                         is what the client meant by "change the selected to
+                         red" (it was the sidebar's active nav item at first,
+                         this filter tab is the actual thing they meant). */
                       filter === option.value
-                        ? 'bg-surface text-neutral-900 shadow-sm'
+                        ? 'bg-brand-500 text-white shadow-sm'
                         : 'text-neutral-600 hover:text-neutral-900',
                     ].join(' ')}
                   >
@@ -434,8 +619,72 @@ export function TenderReviewPage() {
                 ))}
               </div>
             }
+            collapsible
+            defaultOpen
             flush
           >
+            {filter === 'review' ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-hairline bg-surface-muted/60 px-5 py-3">
+                <span className="text-xs text-neutral-600">Accept every pending match at or above</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={bulkAcceptPercent}
+                  onChange={(event) => setBulkAcceptPercent(Number(event.target.value))}
+                  className="h-8 w-16 rounded-lg border border-hairline bg-surface px-2 text-xs tabular-nums outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15"
+                />
+                <span className="text-xs text-neutral-600">% confidence</span>
+                <ActionButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBulkAccept}
+                  disabled={bulkAccepting}
+                >
+                  {bulkAccepting ? 'Accepting…' : 'Accept all'}
+                </ActionButton>
+                {bulkAcceptResult ? (
+                  <span className="text-xs text-neutral-500">{bulkAcceptResult}</span>
+                ) : (
+                  <span className="text-xs text-neutral-400">
+                    Reviews rows individually below, this just saves clicking through ones you already trust.
+                  </span>
+                )}
+              </div>
+            ) : null}
+
+            {filter === 'review' ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-hairline bg-surface-muted/60 px-5 py-3">
+                <span className="text-xs text-neutral-600">Reject every pending match at or below</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={bulkRejectPercent}
+                  onChange={(event) => setBulkRejectPercent(Number(event.target.value))}
+                  className="h-8 w-16 rounded-lg border border-hairline bg-surface px-2 text-xs tabular-nums outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15"
+                />
+                <span className="text-xs text-neutral-600">% confidence</span>
+                <ActionButton
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBulkReject}
+                  disabled={bulkRejecting}
+                >
+                  {bulkRejecting ? 'Rejecting…' : 'Reject all'}
+                </ActionButton>
+                {bulkRejectResult ? (
+                  <span className="text-xs text-neutral-500">{bulkRejectResult}</span>
+                ) : (
+                  <span className="text-xs text-neutral-400">
+                    A rejected match isn't "no evidence", the requirement just needs a document attached by hand.
+                  </span>
+                )}
+              </div>
+            ) : null}
+
             {filter === 'all' && narrativeRequirements.length > 0 ? (
               <div className="border-b border-hairline bg-surface-muted/60 px-5 py-3">
                 <button
@@ -449,7 +698,7 @@ export function TenderReviewPage() {
                       {formatCount(narrativeRequirements.length)}
                     </strong>{' '}
                     disclaimer / executive-summary statement
-                    {narrativeRequirements.length === 1 ? '' : 's'} — {narrativePercent}% of
+                    {narrativeRequirements.length === 1 ? '' : 's'}, {narrativePercent}% of
                     extracted content, not counted as compliance requirements.
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600">
@@ -482,7 +731,7 @@ export function TenderReviewPage() {
                 {requirements.length === 0
                   ? 'No requirements were extracted from this tender.'
                   : narrativeRequirements.length > 0 && actionableRequirements.length === 0
-                    ? 'Every extracted row was disclaimer/summary text — see above.'
+                    ? 'Every extracted row was disclaimer/summary text, see above.'
                     : 'Nothing matches this filter.'}
               </p>
             ) : (
@@ -508,8 +757,13 @@ export function TenderReviewPage() {
         </div>
 
         {/* Coverage by evaluation impact */}
-        <div className="w-full xl:max-w-sm">
-          <Panel title="Coverage by evaluation" description="Marks captured against marks available.">
+        <div className="min-w-0 w-full">
+          <Panel
+            title="Coverage by evaluation"
+            description="Marks captured against marks available."
+            collapsible
+            defaultOpen
+          >
             {report.by_evaluation_impact.length === 0 ? (
               <p className="text-sm text-neutral-500">
                 No scored requirements were found in this tender.
@@ -588,6 +842,16 @@ export function TenderReviewPage() {
         confirmLabel={finalizing ? 'Finalizing…' : 'Finalize tender'}
         onConfirm={handleFinalize}
         onCancel={() => setConfirmFinalize(false)}
+      />
+
+      <ExcelTemplateCustomizer
+        open={showExcelCustomizer}
+        initialTemplate={excelTemplate}
+        busy={excelTemplateBusy}
+        error={excelTemplateError}
+        onCancel={() => setShowExcelCustomizer(false)}
+        onSave={handleSaveExcelTemplate}
+        onResetToDefault={handleResetExcelTemplate}
       />
     </div>
   )

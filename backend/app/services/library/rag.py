@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 
 from sqlalchemy.orm import Session
 
-from app.models.enums import DocumentCategory
+from app.models.enums import DocumentCategory, UsagePurpose
 from app.schemas.library import AnswerOut, SearchHit
 from app.services.library import llm, search
 
@@ -118,6 +119,7 @@ def answer(
     category: DocumentCategory | None = None,
     limit: int = DEFAULT_CONTEXT_CHUNKS,
     min_similarity: float = MIN_CONTEXT_SIMILARITY,
+    user_id: uuid.UUID | None = None,
 ) -> AnswerOut:
     """Retrieve, then generate a grounded answer with citations.
 
@@ -148,6 +150,9 @@ def answer(
         f"Question: {question}",
         system=SYSTEM_PROMPT,
         max_tokens=1500,
+        db=db,
+        purpose=UsagePurpose.LIBRARY_ASK,
+        user_id=user_id,
     )
 
     # llm.complete() returns "" on any failure — no key, rate limit, network.

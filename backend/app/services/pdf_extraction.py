@@ -27,7 +27,7 @@ ignored with a warning rather than silently overriding a working PATH lookup.
 import io
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -59,6 +59,93 @@ class ExtractedPage:
     page_no: int  # 1-indexed, matches what a human reading the PDF sees (TN-ING-02)
     text: str
     used_ocr: bool
+    # Task: structural section detection. Candidate heading lines on this page,
+    # in reading order, detected from the PDF's own font metadata (not regex
+    # keyword matching - see _detect_page_headings). Empty for OCR'd pages,
+    # since a rasterized page has no font spans to inspect; chunking.py falls
+    # back to keyword matching for those.
+    headings: list[str] = field(default_factory=list)
+
+
+# --- structural heading detection --------------------------------------
+#
+# The original section detector (chunking.SECTION_PATTERNS) only recognizes
+# six fixed World Bank / ADB phrases ("Specific Procurement Notice", "Section
+# VII", ...). Any tender that uses its own numbered-heading style (which is
+# most of them) never matches a single pattern, so the whole document falls
+# back to one undifferentiated "General/Front Matter" section - which is
+# exactly what happened on the sample EMS RFP (112/167 extracted rows mis-
+# labeled). This detector instead asks "does this line of text look like a
+# heading on the page it's printed on", using the same signal a human uses:
+# it is set in a noticeably larger and/or bolder font than the page's own
+# body text, it's short, and it doesn't trail off into a full sentence.
+_HEADING_MAX_CHARS = 120
+_HEADING_MAX_WORDS = 18
+
+
+def _detect_page_headings(page: "fitz.Page") -> list[str]:
+    """Returns at most one candidate heading for the page: the single most
+    visually prominent qualifying line (in reading order for ties). Only one
+    is returned, not every bolded phrase on the page, because a tender page
+    is full of bolded labels and sub-items that are not section headings -
+    picking just the standout line keeps section changes to roughly one per
+    real heading instead of firing on every emphasized word. Best-effort: any
+    parsing error just yields no heading for that page (caller falls back to
+    keyword matching)."""
+    try:
+        raw = page.get_text("dict")
+    except Exception:  # pragma: no cover - defensive, PyMuPDF internals
+        return []
+
+    spans: list[dict] = []
+    for block in raw.get("blocks", []):
+        for line in block.get("lines", []):
+            line_text = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
+            if not line_text:
+                continue
+            sizes = [s.get("size", 0) for s in line.get("spans", []) if s.get("text", "").strip()]
+            if not sizes:
+                continue
+            flags = [s.get("flags", 0) for s in line.get("spans", []) if s.get("text", "").strip()]
+            is_bold = any(f & 2**4 for f in flags)  # bit 4 = bold, per PyMuPDF span flags
+            spans.append({"text": line_text, "size": max(sizes), "bold": is_bold})
+
+    if not spans:
+        return []
+
+    body_size = _median([s["size"] for s in spans])
+    candidates: list[tuple[float, str]] = []
+    for s in spans:
+        text = s["text"]
+        if len(text) > _HEADING_MAX_CHARS or len(text.split()) > _HEADING_MAX_WORDS:
+            continue
+        # Sentence-like lines (ending in a full stop followed by nothing, or a
+        # comma) are prose, not headings, regardless of font size.
+        if text.endswith((".", ",", ";")) and not text.isupper():
+            continue
+        larger = s["size"] >= body_size * 1.15
+        boldly_larger = s["bold"] and s["size"] >= body_size * 1.05
+        if larger or boldly_larger:
+            candidates.append((s["size"], text))
+
+    if not candidates:
+        return []
+
+    best_size = max(c[0] for c in candidates)
+    for size, text in candidates:
+        if size == best_size:
+            return [text]
+    return []  # unreachable, but keeps mypy/pyright happy
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
 
 
 def extract_pdf_pages(file_content: bytes) -> list[ExtractedPage]:
@@ -71,6 +158,7 @@ def extract_pdf_pages(file_content: bytes) -> list[ExtractedPage]:
         for page_index in range(len(doc)):
             page = doc.load_page(page_index)
             text = page.get_text("text")
+            headings = _detect_page_headings(page)
 
             table_text = ""
             tables = page.find_tables()
@@ -90,6 +178,10 @@ def extract_pdf_pages(file_content: bytes) -> list[ExtractedPage]:
                 try:
                     full_page_content = pytesseract.image_to_string(img).strip()
                     used_ocr = True
+                    # A rasterized OCR page has no font spans to detect
+                    # headings from - chunking.py falls back to keyword
+                    # matching (SECTION_PATTERNS) for these pages.
+                    headings = []
                 except pytesseract.TesseractNotFoundError:
                     # A missing OCR binary should not lose the whole document:
                     # every other page still extracted fine, and this page is
@@ -100,7 +192,14 @@ def extract_pdf_pages(file_content: bytes) -> list[ExtractedPage]:
                         page_index + 1,
                     )
 
-            pages.append(ExtractedPage(page_no=page_index + 1, text=full_page_content, used_ocr=used_ocr))
+            pages.append(
+                ExtractedPage(
+                    page_no=page_index + 1,
+                    text=full_page_content,
+                    used_ocr=used_ocr,
+                    headings=headings,
+                )
+            )
     finally:
         doc.close()
 

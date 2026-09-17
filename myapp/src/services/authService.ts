@@ -19,9 +19,11 @@ import type {
   LoginRequest,
   MessageResponse,
   RegisterRequest,
+  ResendVerificationRequest,
   ResetPasswordRequest,
   TokenResponse,
   User,
+  VerifyEmailRequest,
 } from '@/models'
 
 /**
@@ -45,6 +47,8 @@ export const AUTH_ENDPOINTS = {
   me: '/api/auth/me',
   forgotPassword: '/api/auth/forgot-password',
   resetPassword: '/api/auth/reset-password',
+  verifyEmail: '/api/auth/verify-email',
+  resendVerification: '/api/auth/resend-verification',
 } as const
 
 /**
@@ -156,6 +160,34 @@ export const authService = {
       anonymous: true,
     })
   },
+
+  /**
+   * Redeems the `?token=` from a signup confirmation email. Single-use, same
+   * "invalid or expired" fallback as resetPassword — the server does not
+   * distinguish an expired token from an already-redeemed one, and there is
+   * nothing more specific this client could honestly say either way.
+   */
+  async verifyEmail(payload: VerifyEmailRequest, signal?: AbortSignal): Promise<MessageResponse> {
+    return api.postJson<MessageResponse>(AUTH_ENDPOINTS.verifyEmail, payload, {
+      signal,
+      anonymous: true,
+    })
+  },
+
+  /**
+   * Re-sends the confirmation link for an account that hasn't clicked it
+   * yet. Reached from the sign-in screen's "Resend verification email"
+   * action once classifyAuthError below reports `unverified`.
+   */
+  async resendVerification(
+    payload: ResendVerificationRequest,
+    signal?: AbortSignal,
+  ): Promise<MessageResponse> {
+    return api.postJson<MessageResponse>(AUTH_ENDPOINTS.resendVerification, payload, {
+      signal,
+      anonymous: true,
+    })
+  },
 }
 
 /**
@@ -171,6 +203,25 @@ export const authService = {
  * screen cannot be used to find out which addresses have accounts. Splitting
  * that message in the client would give away exactly what the server withheld.
  */
+/**
+ * True when a 403's body carries the structured
+ * `{"detail": {"message": ..., "code": "email_not_verified"}}` shape
+ * login() sends for an unverified account — see backend/app/api/routes/
+ * auth.py's login(). `error.detail` on ApiError is the *whole* parsed JSON
+ * body (not just its "detail" key — see apiClient.ts's `request()`), so
+ * this drills through one extra layer rather than assuming the shape.
+ */
+function isEmailNotVerified(detail: unknown): boolean {
+  if (typeof detail !== 'object' || detail === null) {
+    return false
+  }
+  const inner = (detail as Record<string, unknown>).detail
+  if (typeof inner !== 'object' || inner === null) {
+    return false
+  }
+  return (inner as Record<string, unknown>).code === 'email_not_verified'
+}
+
 export function classifyAuthError(error: unknown): AuthFailure {
   if (error instanceof ApiError) {
     if (error.isOffline) {
@@ -184,7 +235,9 @@ export function classifyAuthError(error: unknown): AuthFailure {
       case 401:
         return { kind: 'invalid', message: error.message }
       case 403:
-        return { kind: 'disabled', message: error.message }
+        return isEmailNotVerified(error.detail)
+          ? { kind: 'unverified', message: error.message }
+          : { kind: 'disabled', message: error.message }
       case 409:
         return { kind: 'conflict', message: error.message }
       case 422:

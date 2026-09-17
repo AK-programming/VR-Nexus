@@ -85,6 +85,65 @@ class Settings(BaseSettings):
     # too high.
     EXTRACTION_CONCURRENCY: int = 4
 
+    # --- Additional providers (client follow-up: "able to change the api to
+    # gemini or openai etc") ---
+    # Both OpenAI and Google Gemini publish an OpenAI-compatible endpoint, so
+    # this app's existing `openai` client library talks to either of them
+    # just by pointing at a different base_url with a different key - no new
+    # SDK needed. Empty by default: with no key set for a provider, nothing
+    # can select it (see app/services/app_settings.py's PROVIDERS / provider
+    # key routes), and every existing deployment keeps running on Anthropic
+    # only, exactly as before this feature existed.
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1/"
+    GEMINI_API_KEY: str = ""
+    # Google's OpenAI-compatible surface for the Gemini API.
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+    # --- API Usage tracking (approximate cost, not a billing source of truth) ---
+    # Anthropic has no pricing-lookup API, so this is a hand-maintained table of
+    # published per-token rates, USD per MILLION tokens, keyed by the exact model
+    # id string that shows up in an API response's `model` field. Every model this
+    # app is actually configured to call (ANTHROPIC_MODEL,
+    # ANTHROPIC_EXTRACTION_MODEL - see above) needs an entry here or its usage
+    # rows cost $0 and a warning is logged (see core/pricing.py). Update this
+    # table by hand whenever Anthropic changes prices or either model id above
+    # changes to a version not yet listed.
+    #
+    # These numbers do NOT account for prompt caching: this app's LLM calls
+    # (services/extraction.py, services/library/llm.py) do not set any caching
+    # controls today, so every call is billed as a full, uncached prompt and this
+    # table's estimate should match actual billing. If caching is ever added,
+    # this becomes an overestimate for whichever calls use it.
+    #
+    # Despite the name (kept as-is so no deployment's .env has to change),
+    # this now holds every model the app can be pointed at across all three
+    # providers, not just Anthropic - model id strings from OpenAI ("gpt-..."),
+    # Gemini ("gemini-...") and Anthropic ("claude-...") don't collide in
+    # practice, so one flat table keyed by model id still works. The OpenAI
+    # and Gemini rows below are seeded from each provider's public pricing
+    # page at the time this was written and, same as the Anthropic rows,
+    # need hand-checking against the provider's current docs before relying
+    # on them - update/replace them the same way you would an Anthropic price
+    # change, right here or from the Settings screen.
+    ANTHROPIC_PRICING_USD_PER_MILLION_TOKENS: dict[str, dict[str, float]] = {
+        "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
+        "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+        # Older ids, kept for a deployment mid-rollover between model versions
+        # (config.py changed, a worker still mid-flight on the old id, or a
+        # historical row whose model string predates a bump) rather than only
+        # covering the two ids active right now.
+        "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+        "claude-haiku-4-20250514": {"input": 1.00, "output": 5.00},
+        "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.00},
+        # OpenAI - verify against https://openai.com/api/pricing/ before relying on these.
+        "gpt-4o": {"input": 2.50, "output": 10.00},
+        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+        # Gemini - verify against https://ai.google.dev/gemini-api/docs/pricing before relying on these.
+        "gemini-flash-latest": {"input": 0.30, "output": 2.50},
+        "gemini-pro-latest": {"input": 2.00, "output": 12.00},
+    }
+
     # --- Section 6: Evidence Library chunking + upload limits ---
     CHUNK_TOKENS: int = 800
     CHUNK_OVERLAP_TOKENS: int = 100
@@ -102,7 +161,14 @@ class Settings(BaseSettings):
 
     @property
     def llm_available(self) -> bool:
-        return self.LLM_ENABLED and bool(self.ANTHROPIC_API_KEY)
+        # True if ANY provider has a .env-sourced key - a Settings-only key
+        # (no .env key at all) still counts as available at the
+        # app_settings.py level (see is_available() in services/library/llm.py,
+        # which checks the DB override too); this property is just the .env
+        # floor, same as before this app supported more than one provider.
+        return self.LLM_ENABLED and bool(
+            self.ANTHROPIC_API_KEY or self.OPENAI_API_KEY or self.GEMINI_API_KEY
+        )
 
     @property
     def max_upload_bytes(self) -> int:

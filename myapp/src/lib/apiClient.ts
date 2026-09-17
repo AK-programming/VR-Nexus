@@ -339,6 +339,19 @@ export const api = {
       ...options,
     }),
 
+  /**
+   * Full replace. Like `patchJson` but with the PUT verb, for the
+   * excel-template routes, which always take the whole template (or `null`
+   * to clear it) rather than a partial patch of it.
+   */
+  putJson: <T>(path: string, payload: unknown, options: CallOptions = {}) =>
+    request<T>(path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      ...options,
+    }),
+
   delete: <T = void>(path: string, options: CallOptions = {}) =>
     request<T>(path, { method: 'DELETE', ...options }),
 }

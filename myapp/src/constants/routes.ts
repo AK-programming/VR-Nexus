@@ -18,6 +18,9 @@ export const ROUTES = {
   register: '/register',
   forgotPassword: '/forgot-password',
   resetPassword: '/reset-password',
+  /** Reached only from the confirmation link register() emails, or a
+   * "Resend verification email" click on sign-in. Takes `?token=`. */
+  verifyEmail: '/verify-email',
 
   tenderAnalysis: '/tender-analysis',
   /** Where a tender is added. `/tender-analysis` itself is the listing. */
@@ -33,6 +36,28 @@ export const ROUTES = {
   activity: '/activity',
   settings: '/settings',
   profile: '/profile',
+  /** Admin-only: the Users list and their per-section access grants. */
+  adminUsers: '/admin/users',
+  /** Admin-only: the shared Anthropic API key and per-model pricing table,
+   * both editable at runtime — see backend/app/api/routes/admin.py's
+   * settings routes and backend/app/services/app_settings.py. */
+  adminSettings: '/admin/settings',
+  /**
+   * Anthropic API token usage and estimated cost. Open to every signed-in
+   * account, not admin-only — an admin sees everyone's usage, anyone else
+   * sees only their own (enforced server-side, see
+   * backend/app/api/routes/usage.py). Not nested under /admin for that
+   * reason, unlike adminUsers above.
+   *
+   * Deliberately NOT "/api-usage" or anything starting with "/api": the
+   * Vite dev server proxies any path beginning with "/api" straight to the
+   * FastAPI backend (see vite.config.ts's `server.proxy`), which matches
+   * by string prefix. A route here named "/api-usage" was being caught by
+   * that same rule and sent to the backend as a page request, which has no
+   * such route and answered with a raw {"detail":"Not Found"} instead of
+   * the app ever rendering.
+   */
+  apiUsage: '/usage',
 } as const
 
 export type RoutePath = (typeof ROUTES)[keyof typeof ROUTES]

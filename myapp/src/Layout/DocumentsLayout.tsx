@@ -15,16 +15,31 @@
 
 import { NavLink, Outlet } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
+import { selectIsAdmin, useAuthStore } from '@/store/authStore'
 
 const TABS = [
   /* `end` only on the index tab: without it, /documents/upload would light Library up
-     as well, because a NavLink matches path prefixes by default. */
-  { to: ROUTES.documents, label: 'Library', end: true },
-  { to: ROUTES.documentsUpload, label: 'Upload', end: false },
-  { to: ROUTES.documentsProcessing, label: 'Processing', end: false },
+     as well, because a NavLink matches path prefixes by default.
+
+     `requiresFullAccess` marks Library as the one tab that needs the full `documents`
+     grant - client follow-up request: an account holding only `documents_upload` can
+     contribute evidence but must not see this tab at all, since the route behind it
+     (guarded separately in the router) would bounce them straight back out. */
+  { to: ROUTES.documents, label: 'Library', end: true, requiresFullAccess: true },
+  { to: ROUTES.documentsUpload, label: 'Upload', end: false, requiresFullAccess: false },
+  { to: ROUTES.documentsProcessing, label: 'Processing', end: false, requiresFullAccess: false },
 ]
 
 export function DocumentsLayout() {
+  const isAdmin = useAuthStore(selectIsAdmin)
+  const featureAccess = useAuthStore((state) => state.user?.feature_access ?? [])
+  const hasFullAccess = isAdmin || featureAccess.includes('documents')
+
+  // An upload-only account (documents_upload without documents) sees Upload and
+  // Processing only - it is already kept off the Library route itself by the
+  // router's RequireFeature, this just keeps the tab from being offered at all.
+  const visibleTabs = TABS.filter((tab) => !tab.requiresFullAccess || hasFullAccess)
+
   return (
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-4">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -46,7 +61,7 @@ export function DocumentsLayout() {
         */}
         <nav aria-label="Documents sections" className="shrink-0">
           <ul className="inline-flex items-center gap-1 rounded-xl border border-hairline bg-surface-muted p-1">
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <li key={tab.to}>
                 <NavLink
                   to={tab.to}
@@ -55,7 +70,7 @@ export function DocumentsLayout() {
                     [
                       'block rounded-lg px-3.5 py-2 text-sm font-medium transition-colors duration-150',
                       isActive
-                        ? 'bg-surface text-neutral-900 shadow-sm'
+                        ? 'bg-brand-500 text-white shadow-sm'
                         : 'text-neutral-600 hover:text-neutral-900',
                     ].join(' ')
                   }

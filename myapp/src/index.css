@@ -177,3 +177,48 @@
     }
   }
 }
+
+/*
+ * Keyframes for the hero's product illustration (LandingPage.tsx). Plain
+ * `@keyframes`, not `--animate-*` theme tokens, because they're used with
+ * Tailwind v4's arbitrary `animate-[name_duration_ease_fill]` syntax at the
+ * one call site rather than as a reusable named utility — a keyframe only
+ * needs registering in `@theme` when several call sites want the same short
+ * utility name. The `prefers-reduced-motion` rule above already zeroes their
+ * duration for anyone who has asked for that, same as every other animation
+ * in the app.
+ */
+@keyframes hero-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes hero-fill {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}

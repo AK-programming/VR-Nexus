@@ -89,15 +89,56 @@ class TenderTextChunk:
     overlap_tokens: int
 
 
+def _normalize_heading(text: str) -> str:
+    """Turns a raw heading line into a stable, readable section label:
+    strips a leading numbering scheme ("3.", "III.", "Section 3 -"), collapses
+    whitespace, and title-cases an ALL-CAPS heading so "SCOPE OF WORK" and
+    "Scope of Work" land in the same bucket instead of splitting a section
+    across two labels."""
+    stripped = text.strip()
+    stripped = re.sub(r"^(section\s+)?([ivxlcdm]+|\d+)([.):-]\s*|\s+[-:]\s*)", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"\s+", " ", stripped).strip(" -:.")
+    if not stripped:
+        return text.strip()
+    if stripped.isupper() and len(stripped) > 3:
+        stripped = stripped.title()
+    return stripped
+
+
 def detect_section_boundaries(pages: list[ExtractedPage]) -> list[SectionedPage]:
-    """Task 2.2.1"""
+    """Task 2.2.1
+
+    Structural-first, keyword-fallback: a page's own detected headings
+    (app.services.pdf_extraction._detect_page_headings, based on real font
+    size/boldness) are the primary signal for "this is a new section" -
+    that's what lets an ordinary numbered-heading tender (not just World
+    Bank/ADB-style documents) get split into real sections instead of
+    collapsing into FALLBACK_SECTION for its entire length. The original
+    SECTION_PATTERNS keyword match is kept as a fallback for two cases where
+    there is no font metadata to look at: OCR'd pages (headings is always
+    empty there, per pdf_extraction), and any page whose headings don't look
+    like a real section title once normalized.
+    """
     current_section = FALLBACK_SECTION
     sectioned: list[SectionedPage] = []
     for page in pages:
-        for section_name, pattern in SECTION_PATTERNS.items():
-            if re.search(pattern, page.text):
-                current_section = section_name
+        matched = False
+
+        page_headings = getattr(page, "headings", None) or []
+        for heading in page_headings:
+            normalized = _normalize_heading(heading)
+            if normalized and len(normalized) >= 3:
+                current_section = normalized
+                matched = True
                 break
+
+        if not matched:
+            for section_name, pattern in SECTION_PATTERNS.items():
+                if re.search(pattern, page.text):
+                    current_section = section_name
+                    matched = True
+                    break
+
         sectioned.append(SectionedPage(page_no=page.page_no, text=page.text, section=current_section))
     return sectioned
 

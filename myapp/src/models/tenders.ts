@@ -320,6 +320,11 @@ export interface TenderListItem {
   /** Set once the failure was emailed to support — flips the error log entry to
    *  the calm "reported, please wait" state. Null until the user reports it. */
   support_requested_at: string | null
+
+  /** Set when one or more extraction chunks failed and were dropped rather than
+   *  failing the whole run — names the page ranges that may be incomplete. Null
+   *  when every chunk succeeded. */
+  extraction_warnings: string | null
 }
 
 /** GET /api/tenders/{id} — full detail. */
@@ -364,6 +369,86 @@ export interface TenderDetail {
   /** Set once the failure was emailed to support — flips the error log entry to
    *  the calm "reported, please wait" state. Null until the user reports it. */
   support_requested_at: string | null
+
+  /** Set when one or more extraction chunks failed and were dropped rather than
+   *  failing the whole run — names the page ranges that may be incomplete. Null
+   *  when every chunk succeeded. */
+  extraction_warnings: string | null
+}
+
+/* -------------------------------------------------------------------------- */
+/* Excel export customization                                                 */
+/* -------------------------------------------------------------------------- */
+
+/** One column in a customized Requirements sheet, in the order it renders. */
+export interface ExcelColumnConfig {
+  /** One of FIXED_EXCEL_COLUMNS' keys, or the exact label of one of this
+   *  tender's own extra fields. */
+  key: string
+  /** What the header cell says. Null/omitted keeps the platform's own label. */
+  label?: string | null
+  visible: boolean
+}
+
+/** A saved (or one-off) export shape for the Requirements sheet. */
+export interface ExcelTemplate {
+  /** Empty = use the platform default column set, in the platform's own order. */
+  columns: ExcelColumnConfig[]
+  /** Drop any row whose visible columns are all blank. */
+  delete_empty_rows: boolean
+  /** Extra blank columns appended after the configured ones, for the user's
+   *  own manual notes — VR-Nexus never fills these in. */
+  added_columns: string[]
+}
+
+export function emptyExcelTemplate(): ExcelTemplate {
+  return { columns: [], delete_empty_rows: false, added_columns: [] }
+}
+
+/** The fixed columns the platform can produce, in their default order — the
+ *  starting point the customizer edits from. Mirrors
+ *  FIXED_COLUMN_REGISTRY in backend/app/tasks/tender_pipeline.py exactly;
+ *  a key here that doesn't match a backend key is silently dropped there. */
+export const FIXED_EXCEL_COLUMNS: { key: string; label: string }[] = [
+  { key: 'page_number', label: 'Page Number' },
+  { key: 'section_name', label: 'Section Name' },
+  { key: 'responsibility', label: 'Responsibility' },
+  { key: 'reference_number', label: 'Reference Number' },
+  { key: 'description', label: 'Clause / Requirement Description' },
+  { key: 'mandatory', label: 'Mandatory (Yes/No)' },
+  {
+    key: 'evaluation_impact',
+    label: 'Evaluation Impact (Pass/Fail / Technical Score / Financial / Compliance)',
+  },
+  /* Derived from the extracted owner hint, one "Yes" per row. These replaced
+     the DPL / PRIME / The Tulepaak trio below, which were one consortium's
+     partner names hardcoded as extraction fields and blank in every row of
+     any tender DPL bid alone on. For a consortium bid, add partner-named
+     columns under "Columns to add" instead: those render blank for hand
+     assignment, which is what a partner split actually needs, since a model
+     cannot know a partner's name. */
+  { key: 'owner_bd', label: 'BD / Bid Management' },
+  { key: 'owner_technical', label: 'Technical / Delivery' },
+  { key: 'owner_finance_legal', label: 'Finance / Legal / Admin' },
+  { key: 'owner_hr', label: 'HR / Resource Management' },
+  { key: 'owner_joint', label: 'Joint / Multiple' },
+  /* Legacy. Extraction no longer fills these; they stay selectable so a tender
+     analysed before the owner columns existed can still render its own. */
+  { key: 'dpl', label: 'DPL' },
+  { key: 'prime', label: 'PRIME Responsibility (Yes/No)' },
+  { key: 'the_t', label: 'The Tulepaak Responsibility (Yes/No)' },
+  { key: 'joint_responsibility', label: 'Joint Responsibility (Yes/No)' },
+  { key: 'evidence_description', label: 'Evidence / Document Required' },
+  { key: 'remarks', label: 'Remarks' },
+  { key: 'marks', label: 'Marks' },
+  { key: 'matched_files', label: 'Matched File(s)' },
+  { key: 'coverage', label: 'Coverage' },
+]
+
+/** GET response for either excel-template endpoint. `template: null` means
+ *  "nothing saved — the next level up (or the platform default) applies". */
+export interface ExcelTemplateResponse {
+  template: ExcelTemplate | null
 }
 
 /** PATCH /api/tenders/{id} — every field optional; only those sent are applied. */
@@ -630,4 +715,20 @@ export function hasReviewableAnalysis(tender: {
   extracted_requirements_count: number
 }): boolean {
   return isSettled(tender.status) || tender.extracted_requirements_count > 0
+}
+
+/**
+ * The extracted owner hint (backend `OwnerHint` in
+ * app/services/extraction.py), as a reader-facing label. Kept as a lookup with
+ * a fall-through rather than a closed union: `Requirement.responsibility` held
+ * free text under the previous schema (a person's name, typically), and those
+ * rows are still in the database, so an unrecognised value must display
+ * unchanged rather than render as blank or "unknown".
+ */
+export const OWNER_HINT_LABELS: Record<string, string> = {
+  BD: 'BD / Bid Management',
+  Technical: 'Technical / Delivery',
+  'Finance-Legal': 'Finance / Legal / Admin',
+  HR: 'HR / Resource Management',
+  Joint: 'Joint / Multiple',
 }

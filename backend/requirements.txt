@@ -84,3 +84,9 @@ openai==1.59.6
 pytest==8.3.4
 # httpx is not a direct import: Starlette's TestClient is built on it.
 httpx==0.28.1
+# pyflakes backs tests/test_no_undefined_names.py. Not a style linter here: it
+# is there for one specific failure, a name used in a code path the tests do
+# not execute. That shipped a NameError into the tender pipeline's triage
+# stage, and neither py_compile nor the suite could see it, because the module
+# imported fine and nothing called that branch.
+pyflakes==3.2.0

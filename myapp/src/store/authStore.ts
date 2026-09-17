@@ -167,7 +167,12 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       set({
         isSubmitting: false,
         failure: null,
-        notice: `Account created for ${created.email}. Sign in to continue.`,
+        // The account exists but sign-in is refused until the confirmation
+        // link is clicked (see backend/app/api/routes/auth.py's register()/
+        // login()) — so the notice has to say that, not just "sign in to
+        // continue", or the very next thing they try will be a confusing
+        // rejection with no context for why.
+        notice: `Account created for ${created.email}. Check your inbox for a confirmation link before signing in.`,
       })
 
       return true

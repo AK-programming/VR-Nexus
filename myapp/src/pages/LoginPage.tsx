@@ -18,6 +18,7 @@ import { readReturnPath } from '@/app/guards'
 import { AlertMessage } from '@/components/feedback/AlertMessage'
 import { AuthAlert } from '@/components/feedback/AuthAlert'
 import { Button } from '@/components/ui/Button'
+import { ActionButton } from '@/components/ui/ActionButton'
 import { Checkbox } from '@/components/ui/Checkbox'
 import { TextField } from '@/components/ui/TextField'
 import {
@@ -25,12 +26,15 @@ import {
   CheckIcon,
   LockIcon,
   MailIcon,
+  SendIcon,
   ShieldCheckIcon,
 } from '@/components/ui/icons'
 import { ROUTES } from '@/constants/routes'
 import { AuthLayout } from '@/Layout/AuthLayout'
+import { errorMessage } from '@/lib/apiClient'
 import { validateEmail, validatePasswordPresent } from '@/lib/validation'
 import type { LoginFormValues } from '@/models'
+import { authService } from '@/services/authService'
 import { useAuthStore } from '@/store/authStore'
 
 type FieldErrors = {
@@ -58,6 +62,27 @@ export function LoginPage() {
   })
   const [errors, setErrors] = useState<FieldErrors>({})
 
+  /* "Resend verification email" — only ever shown while `failure.kind ===
+     'unverified'` (see below). Its own small state rather than piggybacking
+     on `notice`/`failure`: those belong to the sign-in attempt itself, and
+     clearing them on the next keystroke (see dismissFailure) would also
+     wipe a resend result that has nothing to do with what's typed. */
+  const [isResending, setResending] = useState(false)
+  const [resendResult, setResendResult] = useState<{ ok: boolean; message: string } | null>(null)
+
+  async function handleResendVerification() {
+    setResending(true)
+    setResendResult(null)
+    try {
+      const response = await authService.resendVerification({ email: values.email.trim() })
+      setResendResult({ ok: true, message: response.message })
+    } catch (error) {
+      setResendResult({ ok: false, message: errorMessage(error) })
+    } finally {
+      setResending(false)
+    }
+  }
+
   /**
    * Editing a field clears that field's error and any failure from the last
    * attempt. Leaving "Incorrect email or password" on screen while someone is busy
@@ -71,6 +96,9 @@ export function LoginPage() {
   function dismissFailure() {
     if (failure) {
       clearFailure()
+    }
+    if (resendResult) {
+      setResendResult(null)
     }
   }
 
@@ -141,6 +169,29 @@ export function LoginPage() {
       {failure ? (
         <div className="mt-[clamp(1rem,2.5dvh,1.75rem)]">
           <AuthAlert failure={failure} />
+          {failure.kind === 'unverified' ? (
+            <div className="mt-2.5">
+              {resendResult ? (
+                <p
+                  className={[
+                    'mb-2 text-xs',
+                    resendResult.ok ? 'text-emerald-700' : 'text-rose-700',
+                  ].join(' ')}
+                >
+                  {resendResult.message}
+                </p>
+              ) : null}
+              <ActionButton
+                variant="secondary"
+                size="sm"
+                leadingIcon={<SendIcon />}
+                disabled={isResending || resendResult?.ok}
+                onClick={() => void handleResendVerification()}
+              >
+                {isResending ? 'Sending…' : 'Resend verification email'}
+              </ActionButton>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

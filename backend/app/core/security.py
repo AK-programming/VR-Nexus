@@ -41,6 +41,7 @@ class TokenType(str, Enum):
     ACCESS = "access"
     REFRESH = "refresh"
     PASSWORD_RESET = "password_reset"
+    EMAIL_VERIFICATION = "email_verification"
 
 
 # Refresh tokens deliberately outlive access tokens (7 days vs the 24h
@@ -53,6 +54,14 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 # open an inbox and click a link, not enough to matter much if that email
 # sits unread for a week.
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
+
+# Longer-lived than a password reset link: verifying an email is far less
+# sensitive than changing a password (the worst outcome of a stale link is
+# "still unverified", not an account takeover), and unlike a reset - which
+# someone actively requested moments ago - a signup confirmation often sits
+# unread for a day before someone gets back to their inbox. 24 hours gives
+# that room without leaving the link usable indefinitely.
+EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 
 def _create_token(user_id: uuid.UUID, role: str, token_type: TokenType, expires_delta: timedelta) -> str:
@@ -99,6 +108,24 @@ def create_password_reset_token(user_id: uuid.UUID) -> str:
         "jti": secrets.token_urlsafe(16),
         "iat": now,
         "exp": now + timedelta(minutes=PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def create_email_verification_token(user_id: uuid.UUID) -> str:
+    """Same shape and reasoning as create_password_reset_token above: no role
+    claim (not needed to prove "confirm this address for this user"), and a
+    random `jti` so services/email_verification_tokens.py can make this one
+    link single-use rather than a bearer credential that stays redeemable
+    for its whole 24-hour life."""
+    now = datetime.now(timezone.utc)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "role": "",
+        "type": TokenType.EMAIL_VERIFICATION.value,
+        "jti": secrets.token_urlsafe(16),
+        "iat": now,
+        "exp": now + timedelta(minutes=EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 

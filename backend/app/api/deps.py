@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import TokenType, decode_token
-from app.models.enums import UserRole
+from app.models.enums import FeatureKey, UserRole
 from app.models.user import User
 
 # HTTPBearer just extracts the "Authorization: Bearer <token>" header for
@@ -83,3 +83,70 @@ def require_role(*allowed_roles: UserRole):
         return current_user
 
     return _check_role
+
+
+def require_feature(feature: FeatureKey):
+    """Dependency factory for the per-user feature grants added alongside
+    require_role - use as Depends(require_feature(FeatureKey.DOCUMENTS)).
+
+    An ADMIN always passes, full stop: admins have complete access by
+    definition and were never meant to need a grant checked off for them.
+    A USER passes only when `feature.value` is in their feature_access
+    list, which starts empty on every new account (see the User model) and
+    is edited exclusively through the admin-only routes in
+    app/api/routes/admin.py.
+
+    This is the enforcement half. The React sidebar and route guards hide
+    what a user cannot reach so the app does not dangle links that 403, but
+    hiding a link is not access control - this dependency is what actually
+    stops the request if someone calls the API directly without the grant.
+    """
+
+    def _check_feature(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role == UserRole.ADMIN:
+            return current_user
+
+        if feature.value not in (current_user.feature_access or []):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"You do not have access to this section ({feature.value}). "
+                    "Ask an administrator to grant it from the Users page."
+                ),
+            )
+        return current_user
+
+    return _check_feature
+
+
+def require_any_feature(*features: FeatureKey):
+    """Like require_feature, but passes when the user holds ANY one of
+    several grants — use as
+    Depends(require_any_feature(FeatureKey.DOCUMENTS, FeatureKey.DOCUMENTS_UPLOAD)).
+
+    Exists for the handful of routes that sit on the boundary between two
+    checkboxes: uploading a document (and completing that one upload's own
+    indexing run) only needs DOCUMENTS_UPLOAD, but an account with the
+    broader DOCUMENTS grant should not lose the ability to upload just
+    because it predates the split. Everywhere else, prefer require_feature
+    with a single key — this is for genuine either/or cases, not a way to
+    avoid deciding which single feature a route belongs to.
+    """
+
+    def _check_any_feature(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role == UserRole.ADMIN:
+            return current_user
+
+        granted = set(current_user.feature_access or [])
+        if not any(f.value in granted for f in features):
+            names = ", ".join(f.value for f in features)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"You do not have access to this section ({names}). "
+                    "Ask an administrator to grant it from the Users page."
+                ),
+            )
+        return current_user
+
+    return _check_any_feature

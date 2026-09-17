@@ -76,6 +76,8 @@ import {
   ChevronRightIcon,
   DownloadIcon,
   FileTextIcon,
+  MaximizeIcon,
+  MinimizeIcon,
   RefreshIcon,
   SparklesIcon,
   SpinnerIcon,
@@ -599,6 +601,39 @@ function PdfPane({ documentId }: { documentId: string }) {
     return () => observer.disconnect()
   }, [])
 
+  /* Full screen wraps the whole pane - toolbar and pager included, not just the page
+     canvas - so the reader keeps zoom and Previous/Next once they are in it. The native
+     Fullscreen API rather than a `<dialog>`: a dialog is still a window-sized box inside
+     the browser chrome, and the point here is the opposite - handing the page the entire
+     screen. `fullscreenchange` is the source of truth for `isFullscreen` rather than the
+     click that requested it, because Escape and the browser's own "Exit full screen"
+     control both leave fullscreen without going through this component at all. */
+  const paneRef = useRef<HTMLDivElement>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    const handleChange = () => setIsFullscreen(document.fullscreenElement === paneRef.current)
+    document.addEventListener('fullscreenchange', handleChange)
+    return () => document.removeEventListener('fullscreenchange', handleChange)
+  }, [])
+
+  const fullscreenSupported =
+    typeof document !== 'undefined' && document.fullscreenEnabled
+
+  const toggleFullscreen = () => {
+    const element = paneRef.current
+
+    if (!element) {
+      return
+    }
+
+    if (document.fullscreenElement) {
+      void document.exitFullscreen()
+    } else {
+      void element.requestFullscreen()
+    }
+  }
+
   const canPrev = pageNumber > 1
   const canNext = numPages > 0 && pageNumber < numPages
   const pageWidth = frameWidth > 0 ? Math.round(frameWidth * scale) : undefined
@@ -616,65 +651,94 @@ function PdfPane({ documentId }: { documentId: string }) {
           : 'Rendering the file.'
 
   return (
-    <Panel
-      title="Pages"
-      description={paneDescription}
-      action={
-        /*
-          One toolbar, three controls, and the zoom percentage stated as a number so the
-          two buttons are not the only feedback that anything happened.
-        */
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setScale((current) => clampScale(current - SCALE_STEP))}
-            disabled={scale <= MIN_SCALE}
-            aria-label="Zoom out"
-            title="Zoom out"
-            className={TOOL_CLASSES}
-          >
-            <ZoomOutIcon className="size-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setScale(1)}
-            aria-label="Fit the page to the width"
-            title="Fit to width"
-            className="inline-flex h-9 min-w-14 shrink-0 items-center justify-center rounded-lg border border-hairline bg-surface px-2 text-xs font-semibold text-neutral-700 tabular-nums transition-colors duration-150 hover:border-neutral-300 hover:text-neutral-900"
-          >
-            {Math.round(scale * 100)}%
-          </button>
-          <button
-            type="button"
-            onClick={() => setScale((current) => clampScale(current + SCALE_STEP))}
-            disabled={scale >= MAX_SCALE}
-            aria-label="Zoom in"
-            title="Zoom in"
-            className={TOOL_CLASSES}
-          >
-            <ZoomInIcon className="size-4" />
-          </button>
-        </div>
-      }
-      flush
+    <div
+      ref={paneRef}
+      className={isFullscreen ? 'flex h-full w-full flex-col bg-surface p-3 sm:p-4' : undefined}
     >
-      {/*
-        The scroll container is the panel body, and it is the element measured for
-        fit-to-width. `overflow-auto` on both axes because zooming past 100% is exactly
-        the case where horizontal scrolling is wanted.
-
-        `safe center` rather than plain `center`, and this is the whole reason zooming
-        works: a centred flex item that outgrows its scroll container overflows equally in
-        both directions, and the half that spills past the start edge cannot be scrolled
-        back to — zoom to 300% and the left third of every page is simply gone. `safe`
-        falls back to start alignment the moment the item stops fitting, which is exactly
-        when centring stops being a kindness. A browser too old to know the keyword drops
-        the declaration and gets start alignment anyway, which is the same answer.
-      */}
-      <div
-        ref={frameRef}
-        className="flex min-h-[28rem] justify-center-safe overflow-auto bg-surface-muted p-4 sm:p-6"
+      <Panel
+        title="Pages"
+        description={paneDescription}
+        className={isFullscreen ? 'h-full flex-1' : undefined}
+        action={
+          /*
+            The toolbar's controls, and the zoom percentage stated as a number so the
+            two zoom buttons are not the only feedback that anything happened. Full
+            screen is the last control, kept in the same row rather than floated over
+            the page, so it is never mistaken for part of the document.
+          */
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setScale((current) => clampScale(current - SCALE_STEP))}
+              disabled={scale <= MIN_SCALE}
+              aria-label="Zoom out"
+              title="Zoom out"
+              className={TOOL_CLASSES}
+            >
+              <ZoomOutIcon className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setScale(1)}
+              aria-label="Fit the page to the width"
+              title="Fit to width"
+              className="inline-flex h-9 min-w-14 shrink-0 items-center justify-center rounded-lg border border-hairline bg-surface px-2 text-xs font-semibold text-neutral-700 tabular-nums transition-colors duration-150 hover:border-neutral-300 hover:text-neutral-900"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={() => setScale((current) => clampScale(current + SCALE_STEP))}
+              disabled={scale >= MAX_SCALE}
+              aria-label="Zoom in"
+              title="Zoom in"
+              className={TOOL_CLASSES}
+            >
+              <ZoomInIcon className="size-4" />
+            </button>
+            {fullscreenSupported ? (
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                aria-label={isFullscreen ? 'Exit full screen' : 'View full screen'}
+                title={isFullscreen ? 'Exit full screen' : 'View full screen'}
+                className={TOOL_CLASSES}
+              >
+                {isFullscreen ? (
+                  <MinimizeIcon className="size-4" />
+                ) : (
+                  <MaximizeIcon className="size-4" />
+                )}
+              </button>
+            ) : null}
+          </div>
+        }
+        flush
       >
+        {/*
+          The scroll container is the panel body, and it is the element measured for
+          fit-to-width. `overflow-auto` on both axes because zooming past 100% is exactly
+          the case where horizontal scrolling is wanted.
+
+          `safe center` rather than plain `center`, and this is the whole reason zooming
+          works: a centred flex item that outgrows its scroll container overflows equally in
+          both directions, and the half that spills past the start edge cannot be scrolled
+          back to — zoom to 300% and the left third of every page is simply gone. `safe`
+          falls back to start alignment the moment the item stops fitting, which is exactly
+          when centring stops being a kindness. A browser too old to know the keyword drops
+          the declaration and gets start alignment anyway, which is the same answer.
+
+          In full screen the container grows to fill the space under the toolbar
+          (`flex-1`) instead of stopping at the `min-h-[28rem]` it uses inline on the
+          page - the whole point of full screen is the extra height.
+        */}
+        <div
+          ref={frameRef}
+          className={[
+            'flex justify-center-safe overflow-auto bg-surface-muted p-4 sm:p-6',
+            isFullscreen ? 'flex-1' : 'min-h-[28rem]',
+          ].join(' ')}
+        >
         {fetchError !== null ? (
           <PaneFailure message={fetchError} onRetry={retry} />
         ) : sourceUrl === null ? (
@@ -756,7 +820,8 @@ function PdfPane({ documentId }: { documentId: string }) {
           Next
         </ActionButton>
       </div>
-    </Panel>
+      </Panel>
+    </div>
   )
 }
 

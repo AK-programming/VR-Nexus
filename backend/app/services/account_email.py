@@ -1,4 +1,4 @@
-"""Account-lifecycle email: password reset.
+"""Account-lifecycle email: password reset, email verification.
 
 Same transport as services/support_email.py (plain SMTP via smtplib, STARTTLS,
 no third-party email service) but kept as its own module rather than a shared
@@ -63,6 +63,29 @@ def _build_reset_message(to_email: str, to_name: str, reset_url: str) -> EmailMe
     return message
 
 
+def _build_verification_message(to_email: str, to_name: str, verify_url: str) -> EmailMessage:
+    settings = get_settings()
+
+    subject = "Confirm your VR-Nexus email address"
+
+    body = (
+        f"Hi {to_name},\n\n"
+        "Welcome to VR-Nexus. Confirm this is your email address to finish "
+        "setting up your account:\n\n"
+        f"  {verify_url}\n\n"
+        "This link expires in 24 hours. You won't be able to sign in until "
+        "you confirm - if this wasn't you, you can just ignore this email.\n"
+    )
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = settings.smtp_from
+    message["To"] = to_email
+    message["Date"] = formatdate(localtime=True)
+    message.set_content(body)
+    return message
+
+
 def _send_sync(message: EmailMessage) -> None:
     settings = get_settings()
 
@@ -97,3 +120,13 @@ async def send_password_reset_email(to_email: str, to_name: str, reset_url: str)
     message = _build_reset_message(to_email, to_name, reset_url)
     await asyncio.to_thread(_send_sync, message)
     logger.info("Password reset email sent to %s", to_email)
+
+
+async def send_verification_email(to_email: str, to_name: str, verify_url: str) -> None:
+    """Raises AccountEmailNotConfigured / AccountEmailFailed - same contract
+    as send_password_reset_email above. Callers: register() (best-effort,
+    does not fail account creation if this raises) and resend_verification()
+    (where it's the whole point of the request, so it does surface)."""
+    message = _build_verification_message(to_email, to_name, verify_url)
+    await asyncio.to_thread(_send_sync, message)
+    logger.info("Verification email sent to %s", to_email)

@@ -58,7 +58,7 @@ export function TenderAnalysisLayout() {
                     [
                       'block rounded-lg px-3.5 py-2 text-sm font-medium transition-colors duration-150',
                       isActive
-                        ? 'bg-surface text-neutral-900 shadow-sm'
+                        ? 'bg-brand-500 text-white shadow-sm'
                         : 'text-neutral-600 hover:text-neutral-900',
                     ].join(' ')
                   }

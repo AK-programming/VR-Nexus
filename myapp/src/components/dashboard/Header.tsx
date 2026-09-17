@@ -8,7 +8,7 @@
  * server feed later without changing this UI.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ROUTES, tenderDetailPath, documentViewerPath } from '@/constants/routes'
@@ -20,6 +20,7 @@ import { listDocuments } from '@/services/documentService'
 import { useAsyncData } from '@/hooks/useAsyncData'
 import { formatRelativeTime } from '@/lib/formatting'
 import { useThemeStore } from '@/store/themeStore'
+import { useClickOutside } from '@/hooks/useClickOutside'
 import { BrandMark, BrandWordmark } from '@/components/ui/BrandMark'
 import { BRAND_SURFACE } from '@/components/ui/surfaces'
 import {
@@ -79,20 +80,6 @@ type SearchHit = {
   subtitle: string
   kind: 'Tender' | 'Document'
   to: string
-}
-
-function useClickOutside(onOutside: () => void) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    function onDown(event: MouseEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        onOutside()
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [onOutside])
-  return ref
 }
 
 function HeaderSearch() {

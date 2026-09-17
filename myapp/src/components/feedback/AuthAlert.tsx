@@ -23,6 +23,7 @@ import {
   BanIcon,
   ClockIcon,
   InfoIcon,
+  MailIcon,
   SignalOffIcon,
 } from '@/components/ui/icons'
 import type { AuthFailure } from '@/models'
@@ -52,6 +53,12 @@ function present(failure: AuthFailure): Presentation {
         tone: 'neutral',
         title: 'This account is disabled',
         icon: <BanIcon />,
+      }
+    case 'unverified':
+      return {
+        tone: 'warning',
+        title: 'Verify your email to continue',
+        icon: <MailIcon />,
       }
     case 'offline':
       return { tone: 'neutral', icon: <SignalOffIcon /> }

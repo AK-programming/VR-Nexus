@@ -13,8 +13,11 @@ from app.models.tender import Tender
 from app.models.tender_chunk import TenderChunk
 from app.models.requirement import Requirement, RequirementEvidenceMatch
 from app.models.audit_log import AuditLog
+from app.models.llm_usage_event import LlmUsageEvent
+from app.models.app_setting import AppSettings
 
 __all__ = [
     "Base", "User", "Document", "DocumentImage", "Chunk", "IndexJob",
     "Tender", "TenderChunk", "Requirement", "RequirementEvidenceMatch", "AuditLog",
+    "LlmUsageEvent", "AppSettings",
 ]

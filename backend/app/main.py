@@ -5,7 +5,11 @@ system with the real database. This is the merged one, and it is the only one
 that should ever be run. Everything the frontend calls lives behind it:
 
     /api/auth/*              register, login, refresh, me
+    /api/admin/*             admin-only: list users, edit their feature access
+    /api/usage/*             Anthropic API usage: admin sees everyone's, a user sees their own
     /api/tenders/*           tender CRUD and the analysis pipeline
+    /api/tenders/{id}/excel-template   per-tender Excel export customization
+    /api/users/me/excel-template       the account's reusable default export shape
     /api/library/*           Evidence Library (Section 6)
     /ws/tenders/{id}/progress    tender pipeline progress
     /ws/library/{job_id}         indexing progress
@@ -38,11 +42,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from app.api.routes.admin import router as admin_router
 from app.api.routes.auth import router as auth_router
+from app.api.routes.excel_template import router as excel_template_router
 from app.api.routes.health import router as health_router
 from app.api.routes.library import router as library_router
 from app.api.routes.library_ws import router as library_ws_router
 from app.api.routes.tenders import router as tenders_router
+from app.api.routes.usage import router as usage_router
 from app.api.routes.ws import router as ws_router
 from app.core.config import get_settings
 from app.core.database import engine
@@ -69,7 +76,10 @@ else:
     logger.info("No static/ directory at %s; /demo is not mounted.", _STATIC_DIR)
 
 app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(usage_router)
 app.include_router(tenders_router)
+app.include_router(excel_template_router)
 app.include_router(ws_router)
 app.include_router(library_router)
 app.include_router(library_ws_router)

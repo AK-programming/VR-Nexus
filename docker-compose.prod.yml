@@ -1,33 +1,34 @@
-# VR-Nexus — production stack.
+# VR-Nexus — production Docker Compose.
 #
-# Standalone (not a dev override), so the development docker-compose.yml is left
-# exactly as it is. The differences from dev are the ones that matter in
-# production: the API and worker run the code baked into their image rather than
-# a hot-reloading source mount, only the frontend is exposed to the outside
-# (nginx proxies /api and /ws inward), and Postgres/Redis are not published to
-# the host at all.
+# Differences from the dev docker-compose.yml:
+#   - No --reload on uvicorn (no file watching in production).
+#   - No code volume mounts (the image contains the code).
+#   - Frontend nginx service included.
+#   - Flower is behind 127.0.0.1 (admin only, not public).
+#   - All ports bind to 0.0.0.0 except Flower and Postgres.
+#   - Env vars come from .env.production (create from .env.production.template).
 #
-# Bring it up:
-#   cp .env.example .env          # set JWT_SECRET_KEY, POSTGRES_PASSWORD, keys
-#   docker compose -f docker-compose.prod.yml build
-#   docker compose -f docker-compose.prod.yml up -d postgres redis
-#   docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
-#   docker compose -f docker-compose.prod.yml up -d api worker frontend
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d --build
 #
-# The app is then served on http://<host>/ . Put a TLS-terminating proxy
-# (Caddy, or nginx with certbot) in front of the frontend service for HTTPS —
-# see docs/DEPLOYMENT.md.
+# On AWS (ECS/EC2), replace the postgres service with an RDS instance and update
+# DATABASE_URL accordingly. Replace redis with ElastiCache if needed.
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: vrnexus_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tender_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-tender_analysis}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/init-extensions.sql:/docker-entrypoint-initdb.d/init-extensions.sql:ro
+    # Only accessible from within the Docker network, not from the host.
+    # If you need direct DB access, uncomment and restrict to 127.0.0.1.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
     healthcheck:
       test:
         - CMD-SHELL
@@ -40,6 +41,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: vrnexus_redis
+    # No host port exposure in production. Only internal Docker network access.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -51,73 +53,84 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: vrnexus/api:latest
     container_name: vrnexus_api
-    # No --reload, no source mount: the image's copied code is what runs.
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    # Production: no --reload, workers scaled to CPU count.
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
     volumes:
       - storage_data:/data/storage
     env_file:
-      - .env
+      - .env.production
     environment:
       - STORAGE_ROOT=/data/storage
       - TENDER_STORAGE_DIR=/data/storage/tenders
       - LIBRARY_STORAGE_DIR=/data/storage/library
       - OUTPUT_STORAGE_DIR=/data/storage/outputs
+      - ENVIRONMENT=production
+      - DEBUG=false
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
 
   worker:
-    image: vrnexus/api:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: vrnexus_worker
     command: celery -A app.celery_app worker --loglevel=info --concurrency=2
     volumes:
       - storage_data:/data/storage
       - fastembed_cache:/root/.cache/fastembed
     env_file:
-      - .env
+      - .env.production
     environment:
       - STORAGE_ROOT=/data/storage
       - TENDER_STORAGE_DIR=/data/storage/tenders
       - LIBRARY_STORAGE_DIR=/data/storage/library
       - OUTPUT_STORAGE_DIR=/data/storage/outputs
+      - ENVIRONMENT=production
+      - DEBUG=false
     depends_on:
-      api:
-        condition: service_started
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
 
-  flower:
-    image: vrnexus/api:latest
-    container_name: vrnexus_flower
-    command: celery -A app.celery_app flower --port=5555
-    env_file:
-      - .env
-    ports:
-      # Admin-only; bound to localhost, reach it over an SSH tunnel in production.
-      - "127.0.0.1:5555:5555"
-    depends_on:
-      - redis
-      - worker
-    restart: unless-stopped
-
   frontend:
     build:
       context: ./myapp
       dockerfile: Dockerfile
-    image: vrnexus/frontend:latest
     container_name: vrnexus_frontend
     ports:
-      - "80:80"
+      - "0.0.0.0:80:80"
     depends_on:
       - api
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vrnexus_flower
+    command: celery -A app.celery_app flower --port=5555
+    ports:
+      # Flower is admin-only. Bind to localhost so it is not publicly reachable.
+      # Access via SSH tunnel: ssh -L 5555:localhost:5555 ec2-user@<ip>
+      - "127.0.0.1:5555:5555"
+    env_file:
+      - .env.production
+    depends_on:
+      - redis
+      - worker
     restart: unless-stopped
 
 volumes:

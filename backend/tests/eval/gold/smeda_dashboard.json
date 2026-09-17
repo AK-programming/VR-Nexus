@@ -1,0 +1,583 @@
+{
+ "meta": {
+  "name": "SMEDA Dashboard Business Plan",
+  "tender_pdf": "RFP IT T 5 (SMEDA Dashboard Business Plan).pdf",
+  "pages": 125,
+  "reference_id": "P78547",
+  "stated_technical_marks": 100,
+  "passing_technical_score": 70,
+  "source": "human-authored tracker, SMEDA Tasks & Responsibilities Sheet"
+ },
+ "rows": [
+  {
+   "pages": "1 (PDF 4)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "Procurement Notice 2-3",
+   "description": "Ensure DPL is registered on EPADS v2.0 and prepare the bid under the Single Stage-Two Envelope procedure using QCBS.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "EPADS registration; technical and financial proposal files",
+   "remarks": "Submission is electronic through EPADS v2.0."
+  },
+  {
+   "pages": "1 (PDF 4)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "Procurement Notice 6",
+   "description": "Submit the RFP through EPADS v2.0 by Thursday, 27 August 2026 at 2:00 PM.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail",
+   "evidence": "EPADS submission confirmation",
+   "remarks": "Late/manual submission is not entertained."
+  },
+  {
+   "pages": "14 (PDF 17)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "BDS Clause 3 / ITB 4.1",
+   "description": "Proposal language must be English.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Compliance",
+   "evidence": "English technical and financial proposals",
+   "remarks": "Apply to all forms and supporting narrative."
+  },
+  {
+   "pages": "15 (PDF 18)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "BDS Clause 6 / ITB 7.1",
+   "description": "Proposal validity is 120 days.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Compliance",
+   "evidence": "TECH-1 and FIN-1 validity dates",
+   "remarks": "Ensure the Bid Securing Declaration remains valid 28 days beyond proposal validity."
+  },
+  {
+   "pages": "15 (PDF 18)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "BDS Clause 7 / ITB 9.1",
+   "description": "Submit all listed forms: TECH-1, TECH-4, TECH-5, TECH-6, Bid Securing Declaration, Blacklisting Undertaking, Annexure-A, Annexure-A(1), FIN-1, FIN-2, Technical Forms Checklist and Eligibility Checklist.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Complete proposal pack in prescribed formats",
+   "remarks": "Wrong technical proposal format may cause non-responsiveness."
+  },
+  {
+   "pages": "16 (PDF 19)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "BDS Clause 9",
+   "description": "Price shall be fixed.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Financial / Compliance",
+   "evidence": "FIN-1; FIN-2; internal cost sheet",
+   "remarks": "Avoid conditional or variable pricing."
+  },
+  {
+   "pages": "16 (PDF 19)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "BDS Clause 13 / ITB 13.1",
+   "description": "Bid currency shall be PKR.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Financial / Compliance",
+   "evidence": "FIN-1 and FIN-2",
+   "remarks": "All quoted amounts should be in PKR."
+  },
+  {
+   "pages": "16-17 (PDF 19-20)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "BDS Clause 14 / ITB 14.1",
+   "description": "Submit the proposal online through EPADS v2.0. The RFP also contains wording regarding hard-copy bid security submission; confirm the latest EPADS/addendum instruction before final submission.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "EPADS upload; bid security/declaration evidence",
+   "remarks": "RFP wording is internally inconsistent on Demand Draft vs Bid Securing Declaration; use the prescribed declaration and latest portal instruction."
+  },
+  {
+   "pages": "17 (PDF 20)",
+   "section": "Procurement Notice / Bid Data Sheet",
+   "reference": "BDS Clause 18 / ITB 21.5",
+   "description": "Successful bidder must furnish a 10% performance guarantee.",
+   "mandatory": "Post-award",
+   "evaluation_impact": "Financial / Contract Compliance",
+   "evidence": "Performance guarantee planning / bank instrument",
+   "remarks": "Required after award, not part of technical scoring."
+  },
+  {
+   "pages": "18 / 78 (PDF 21 / 81)",
+   "section": "Eligibility Criteria",
+   "reference": "Eligibility 1",
+   "description": "Provide legal incorporation/registration with the relevant government authority.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail",
+   "evidence": "SECP / registration certificate",
+   "remarks": "Attach scanned legal registration documents."
+  },
+  {
+   "pages": "18 / 78 (PDF 21 / 81)",
+   "section": "Eligibility Criteria",
+   "reference": "Eligibility 2",
+   "description": "Provide NTN and STRN/PST registrations.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail",
+   "evidence": "NTN certificate; STRN/PST certificates",
+   "remarks": "Must be valid and match the bidding entity."
+  },
+  {
+   "pages": "18 / 78 (PDF 21 / 81)",
+   "section": "Eligibility Criteria",
+   "reference": "Eligibility 3",
+   "description": "Provide proof that the firm is on the FBR Active Taxpayer List (ATL).",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail",
+   "evidence": "ATL proof / screenshot or certificate",
+   "remarks": "Use current ATL evidence."
+  },
+  {
+   "pages": "18 / 78 (PDF 21 / 81)",
+   "section": "Eligibility Criteria",
+   "reference": "Eligibility 4",
+   "description": "Demonstrate at least 5 years of verifiable relevant experience.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail",
+   "evidence": "Annexure-A; relevant contracts / completion evidence",
+   "remarks": "Separate from the 35-mark specific-project scoring criterion."
+  },
+  {
+   "pages": "18 / 78 (PDF 21 / 81)",
+   "section": "Eligibility Criteria",
+   "reference": "Eligibility 5",
+   "description": "Demonstrate average annual revenue of at least PKR 50 million over the previous three years.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail",
+   "evidence": "Average Annual Turnover Form; audited financial statements / tax returns / bank statements",
+   "remarks": "Average of the previous three years must meet the threshold."
+  },
+  {
+   "pages": "19 / 78 (PDF 22 / 81)",
+   "section": "Eligibility Criteria",
+   "reference": "Eligibility 6",
+   "description": "Submit the prescribed non-blacklisting affidavit on legal stamp paper of minimum PKR 100.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Signed Blacklisting Undertaking on PKR 100 stamp paper",
+   "remarks": "Use prescribed RFP wording."
+  },
+  {
+   "pages": "19 / 78 (PDF 22 / 81)",
+   "section": "Eligibility Criteria",
+   "reference": "Eligibility 7",
+   "description": "Submit the prescribed Bid Securing Declaration on legal stamp paper of minimum PKR 100 in favor of SMEDA.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Signed Bid Securing Declaration on PKR 100 stamp paper",
+   "remarks": "Declaration should remain valid 28 days beyond proposal validity. If bidding as a JV, the declaration must be in the name of the JV and cover all members."
+  },
+  {
+   "pages": "79 (PDF 82)",
+   "section": "Evaluation Criteria - Firm & Experience",
+   "reference": "Evaluation 2.1",
+   "description": "Firm profile: provide documentary evidence of length of incorporation. 10 years or more earns the full 5 marks; less than 10 years is relatively marked.",
+   "mandatory": "No - Scoring",
+   "evaluation_impact": "Technical Score - 5 marks",
+   "evidence": "Company registration certificate / incorporation proof",
+   "remarks": "Confirm incorporation date and expected score."
+  },
+  {
+   "pages": "79 (PDF 82)",
+   "section": "Evaluation Criteria - Firm & Experience",
+   "reference": "Evaluation 2.2",
+   "description": "Identify up to 5 relevant completed projects in web-based dashboards / IT solutions / M&E / progress monitoring / UI / application dashboards, each valued at PKR 15 million or above and completed within the last 5 years.",
+   "mandatory": "No - Scoring",
+   "evaluation_impact": "Technical Score - up to 35 marks",
+   "evidence": "Annexure-A project sheets; award letter / contract / completion certificate showing value and duration",
+   "remarks": "Known gap to validate. Maximum 7 marks per qualifying project, up to 5 projects."
+  },
+  {
+   "pages": "80 (PDF 83)",
+   "section": "Evaluation Criteria - Firm & Experience",
+   "reference": "Evaluation 2.3",
+   "description": "Prepare evidence for 5 relevant clients: at least 3 Government-sector clients and 2 Development-sector clients (e.g., UN agencies, JICA, World Bank, ITC or similar).",
+   "mandatory": "No - Scoring",
+   "evaluation_impact": "Technical Score - up to 10 marks",
+   "evidence": "Client schedule; award letter / contract / completion certificate / recommendation letter",
+   "remarks": "Known gap to validate. 2 marks per qualifying client."
+  },
+  {
+   "pages": "80 / 86 (PDF 83 / 89)",
+   "section": "Evaluation Criteria - Methodology & Work Plan",
+   "reference": "Evaluation 2.4 / TECH-4(a)",
+   "description": "Prepare Understanding of Assignment showing why SMEDA needs the dashboard, intended users, monitoring objectives, KPI/target/budget needs and decision-making outcomes.",
+   "mandatory": "No - Scoring",
+   "evaluation_impact": "Technical Score - 10 marks",
+   "evidence": "TECH-4 - Understanding of Assignment",
+   "remarks": "Proposal-development task; should directly map to TOR objectives."
+  },
+  {
+   "pages": "80 / 86 (PDF 83 / 89)",
+   "section": "Evaluation Criteria - Methodology & Work Plan",
+   "reference": "Evaluation 2.4 / TECH-4(b)",
+   "description": "Prepare the Technical Approach covering M&E framework design methodology, platform recommendation rationale, data-entry approach and dashboard architecture quality.",
+   "mandatory": "No - Scoring",
+   "evaluation_impact": "Technical Score - 10 marks",
+   "evidence": "TECH-4 - Technical Approach; architecture diagram; methodology",
+   "remarks": "Address all four named sub-areas explicitly."
+  },
+  {
+   "pages": "80 / 86-87 (PDF 83 / 89-90)",
+   "section": "Evaluation Criteria - Methodology & Work Plan",
+   "reference": "Evaluation 2.4 / TECH-4(c) / TECH-5",
+   "description": "Prepare a detailed, realistic work plan and convert it into the TECH-5 deliverable schedule / bar chart.",
+   "mandatory": "No - Scoring",
+   "evaluation_impact": "Technical Score - 5 marks",
+   "evidence": "TECH-4 Work Plan; TECH-5 Gantt / bar chart",
+   "remarks": "Align with 7-month TOR and all deliverables."
+  },
+  {
+   "pages": "80 (PDF 83)",
+   "section": "Evaluation Criteria - Methodology & Work Plan",
+   "reference": "Evaluation 2.4",
+   "description": "Prepare for a possible bidder presentation if SMEDA invites the firm.",
+   "mandatory": "Conditional",
+   "evaluation_impact": "Technical Evaluation Support",
+   "evidence": "Presentation deck and speaker notes",
+   "remarks": "Not a separate submission requirement unless invited."
+  },
+  {
+   "pages": "80 (PDF 83)",
+   "section": "Evaluation Criteria - Key Experts",
+   "reference": "Evaluation 2.5 - General",
+   "description": "Propose up to 4 Key Experts: Team Leader, M&E Specialist, IT & Dashboard Analyst/Developer, and Implementation Support Expert. All proposed Key Experts must have at least 16 years of education in relevant disciplines.",
+   "mandatory": "Yes / Scoring",
+   "evaluation_impact": "Technical Score - 25 marks",
+   "evidence": "TECH-6 team composition; signed CVs; degree evidence",
+   "remarks": "Select strongest available experts because experience bands directly affect marks."
+  },
+  {
+   "pages": "80-82 (PDF 83-85)",
+   "section": "Evaluation Criteria - Key Experts",
+   "reference": "Team Leader",
+   "description": "Identify Team Leader with advanced degree (Master’s or higher) in MIS / Computer Science or related field, at least 7 years progressive relevant experience, multi-stakeholder experience and at least 3 comparable dashboard/MIS projects.",
+   "mandatory": "Yes / Scoring",
+   "evaluation_impact": "Technical Score - up to 10 marks",
+   "evidence": "TECH-6 CV; degree; project experience and references",
+   "remarks": ">15 years relevant experience earns 10 marks; >10-15 earns 5; >7-10 earns 1."
+  },
+  {
+   "pages": "81-82 (PDF 84-85)",
+   "section": "Evaluation Criteria - Key Experts",
+   "reference": "M&E Specialist",
+   "description": "Identify M&E Specialist with advanced degree in Statistics, Social Sciences, Economics or related discipline and at least 5 years relevant M&E/program performance experience.",
+   "mandatory": "Yes / Scoring",
+   "evaluation_impact": "Technical Score - up to 5 marks",
+   "evidence": "TECH-6 CV; degree; relevant assignments",
+   "remarks": ">10 years earns 5; >7-10 earns 3; >5-7 earns 1."
+  },
+  {
+   "pages": "81-82 (PDF 84-85)",
+   "section": "Evaluation Criteria - Key Experts",
+   "reference": "IT & Dashboard Expert",
+   "description": "Identify IT/Dashboard expert with 16 years education in CS/IT/Software Engineering/IS or related discipline and at least 5 years experience in web applications, MIS, dashboards, databases, integrations and reporting.",
+   "mandatory": "Yes / Scoring",
+   "evaluation_impact": "Technical Score - up to 5 marks",
+   "evidence": "TECH-6 CV; degree; dashboard / MIS assignments",
+   "remarks": "Relevant certifications are an added advantage. Experience bands: 5 / 3 / 1 marks."
+  },
+  {
+   "pages": "82 (PDF 85)",
+   "section": "Evaluation Criteria - Key Experts",
+   "reference": "Implementation Support Expert",
+   "description": "Identify Implementation Support Expert with 16 years relevant education and at least 5 years experience in institutional/governance settings, M&E/MIS, dashboards, stakeholder coordination, training and change management.",
+   "mandatory": "Yes / Scoring",
+   "evaluation_impact": "Technical Score - up to 5 marks",
+   "evidence": "TECH-6 CV; degree; relevant assignments",
+   "remarks": "Experience bands: >10 years = 5; >7-10 = 3; >5-7 = 1."
+  },
+  {
+   "pages": "76 (PDF 79)",
+   "section": "Terms of Reference / Delivery Plan",
+   "reference": "TOR 3.6 - Training",
+   "description": "Plan structured training: at least two half-day workshops for Project Managers, one full-day workshop for Theme Leads, and training for Senior Management.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Compliance / Delivery",
+   "evidence": "Training plan; agendas; materials; user manual; admin guide",
+   "remarks": "Reflect training methodology and staffing in TECH-4."
+  },
+  {
+   "pages": "76 (PDF 79)",
+   "section": "Terms of Reference / Delivery Plan",
+   "reference": "TOR 3.6 - Support",
+   "description": "Plan minimum 3 months post-deployment support after go-live, including issue resolution, query management, minor adjustments, troubleshooting and handover.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Compliance / Delivery",
+   "evidence": "Support plan; handover package; documentation",
+   "remarks": "Must be included in the 7-month schedule and pricing."
+  },
+  {
+   "pages": "76 (PDF 79)",
+   "section": "Terms of Reference / Delivery Plan",
+   "reference": "TOR 3.7",
+   "description": "Prepare testing, validation and deployment plan: historical/baseline data loading, UAT with project teams, defect closure and production deployment.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Compliance / Delivery",
+   "evidence": "Test/UAT plan; defect log approach; deployment plan",
+   "remarks": "Map into TECH-4 and TECH-5."
+  },
+  {
+   "pages": "76-77 (PDF 79-80)",
+   "section": "Terms of Reference / Delivery Plan",
+   "reference": "TOR 4 - Key Deliverables",
+   "description": "Map all TOR deliverables into the work plan: Inception Report; Data Architecture/Platform Recommendation; Dashboard Prototype; UAT Report; Manuals/Training Materials; Production Deployment; Handover Package; Post-Implementation Support.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Compliance / Delivery",
+   "evidence": "Deliverables matrix; TECH-5 schedule",
+   "remarks": "Use the actual TOR deliverables rather than only the placeholder D-1 to D-6 rows in TECH-5."
+  },
+  {
+   "pages": "77 (PDF 80)",
+   "section": "Terms of Reference / Delivery Plan",
+   "reference": "TOR 5 - Timeline",
+   "description": "Plan the total 7-month engagement: 4 months for deployment/operationalization and 3 months post-implementation support/troubleshooting.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Compliance / Schedule",
+   "evidence": "TECH-5 work schedule / Gantt",
+   "remarks": "No activity should contradict the stated overall duration."
+  },
+  {
+   "pages": "83-84 (PDF 86-87)",
+   "section": "Technical Proposal Forms",
+   "reference": "TECH-1",
+   "description": "Complete and sign the Technical Proposal Submission Form, including bidder/JV details if applicable, proposal validity, declarations and authorized signatory information.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Signed TECH-1; authority to sign / power of attorney if applicable",
+   "remarks": "Use the prescribed form without changing its legal declarations."
+  },
+  {
+   "pages": "83 / 118 (PDF 86 / 121)",
+   "section": "Technical Proposal Forms",
+   "reference": "TECH-1 Attachment - JV Letter of Intent / JV Agreement",
+   "description": "If bidding as a Joint Venture, identify all JV members and the Lead Member and attach either a signed Letter of Intent to form the JV or an existing JV Agreement signed by every participating member. The document should confirm the JV structure and joint and several liability of the members.",
+   "mandatory": "Conditional - If JV",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Signed Letter of Intent to form JV or existing signed JV Agreement",
+   "remarks": "There is no separate prescribed JV form in the RFP; the JV document is an attachment to TECH-1."
+  },
+  {
+   "pages": "84 / 118 (PDF 87 / 121)",
+   "section": "Technical Proposal Forms",
+   "reference": "Power of Attorney - JV",
+   "description": "If bidding as a JV, prepare the required Powers of Attorney: authority for the authorized representative of each JV member and authority for the Lead Member representative to act/sign on behalf of all JV members. If only the Lead Member signs TECH-1, the relevant POA must be attached.",
+   "mandatory": "Conditional - If JV",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Executed Powers of Attorney for JV member representatives and Lead Member representative",
+   "remarks": "The RFP states that there is no pre-set POA format."
+  },
+  {
+   "pages": "8 (PDF 11)",
+   "section": "Technical Proposal Forms",
+   "reference": "ITB 14.2 - JV EPADS Submission",
+   "description": "If bidding as a JV, submit the proposal through the EPADS v2.0 account of the Lead Member and provide reference to the EPADS accounts/credentials of all JV members as required.",
+   "mandatory": "Conditional - If JV",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Lead Member EPADS submission + JV member EPADS references/credentials",
+   "remarks": "All JV members should be properly identified in the proposal; use the Lead Member account for submission."
+  },
+  {
+   "pages": "86 (PDF 89)",
+   "section": "Technical Proposal Forms",
+   "reference": "TECH-4",
+   "description": "Prepare the Approach, Methodology and Work Plan using the prescribed structure: Understanding, Technical Approach, Work Plan, and Comments on TORs (if any).",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Score - 25 marks",
+   "evidence": "Completed TECH-4 narrative",
+   "remarks": "This form carries the core methodology scoring."
+  },
+  {
+   "pages": "87 (PDF 90)",
+   "section": "Technical Proposal Forms",
+   "reference": "TECH-5",
+   "description": "Complete the Work Schedule and Planning for Deliverables. List activities/deliverables and show duration in bar-chart form, including approvals and phase benchmarks.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Score / Compliance",
+   "evidence": "Completed TECH-5 schedule",
+   "remarks": "Align to the 7-month TOR and the eight deliverables."
+  },
+  {
+   "pages": "88 (PDF 91)",
+   "section": "Technical Proposal Forms",
+   "reference": "TECH-6 - Team Table",
+   "description": "Complete team composition: expert name, position, qualification, years of education and relevant years of experience; list relevant assignments for each expert.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Score - 25 marks",
+   "evidence": "Completed TECH-6 team and experience tables",
+   "remarks": "Use exact designation for each proposed expert."
+  },
+  {
+   "pages": "89-90 (PDF 92-93)",
+   "section": "Technical Proposal Forms",
+   "reference": "TECH-6 - CVs",
+   "description": "Prepare the prescribed CV for each Key Expert, including full work history, relevant/non-relevant assignments, references, professional memberships, language skills, assigned tasks and prior work illustrating capability.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Technical Score / Compliance",
+   "evidence": "Four completed TECH-6 CVs with supporting degrees/experience",
+   "remarks": "The RFP asks for all past assignments, relevant or not relevant, in the CV work history."
+  },
+  {
+   "pages": "90 (PDF 93)",
+   "section": "Technical Proposal Forms",
+   "reference": "TECH-6 - CV Certification",
+   "description": "Obtain each expert’s signature certifying the CV and availability, plus the authorized representative’s signature.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Signed CV certification pages",
+   "remarks": "Do not nominate experts without confirmed availability."
+  },
+  {
+   "pages": "91 (PDF 94)",
+   "section": "Technical Proposal Forms",
+   "reference": "Bid Securing Declaration",
+   "description": "Complete prescribed Bid Securing Declaration with date, proposal number, authorized signature, consultant name, address and contact details.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Original/signed declaration; PKR 100 stamp paper version",
+   "remarks": "Validity extends 28 days beyond proposal validity. If bidding as a JV, the declaration must be in the name of the JV and cover all members."
+  },
+  {
+   "pages": "92 (PDF 95)",
+   "section": "Technical Proposal Forms",
+   "reference": "Blacklisting Undertaking",
+   "description": "Complete and sign the prescribed Undertaking Regarding Not Being Blacklisted on PKR 100 stamp paper.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Signed PKR 100 stamp-paper undertaking",
+   "remarks": "Confirm SMEDA Blacklisting Policy 2023 has been read and accepted."
+  },
+  {
+   "pages": "93 (PDF 96)",
+   "section": "Technical Proposal Forms",
+   "reference": "Annexure-A Part 1",
+   "description": "Complete Applicant Information Form: legal name, year of registration, NTN, top three core business areas, legal status, geographic presence, leadership and authorized contact information.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Compliance / Firm Profile",
+   "evidence": "Completed Annexure-A Part 1 + registration documents",
+   "remarks": "Keep all corporate data consistent across TECH-1 and supporting documents."
+  },
+  {
+   "pages": "94 (PDF 97)",
+   "section": "Technical Proposal Forms",
+   "reference": "Annexure-A Part 2",
+   "description": "Prepare one Specific Experience project sheet per selected project with title, employer, scope/role, year/duration, cost, contact details, status and magnitude.",
+   "mandatory": "Yes for claimed experience",
+   "evaluation_impact": "Technical Score - 35 marks",
+   "evidence": "Completed project sheets + supporting evidence placed next to each sheet",
+   "remarks": "Only projects with verifiable evidence of cost and duration will be considered."
+  },
+  {
+   "pages": "95 (PDF 98)",
+   "section": "Technical Proposal Forms",
+   "reference": "Annexure-A(1)",
+   "description": "Complete Litigation History. If there are no cases, state NIL / None / N/A rather than leaving the table unexplained.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Compliance",
+   "evidence": "Completed Litigation History form",
+   "remarks": "Ensure consistency with the detailed procurement litigation form on pages 120-121."
+  },
+  {
+   "pages": "96 (PDF 99)",
+   "section": "Technical Proposal Forms",
+   "reference": "FIN-1",
+   "description": "Complete Financial Proposal Submission Form: total amount in words and figures, inclusive of applicable taxes/duties, validity date and authorized signatory details.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Financial / Pass-Fail",
+   "evidence": "Signed FIN-1",
+   "remarks": "Keep completely separate from the Technical Proposal."
+  },
+  {
+   "pages": "97 (PDF 100)",
+   "section": "Technical Proposal Forms",
+   "reference": "FIN-2",
+   "description": "Complete Summary of Costs and ensure the total exactly matches FIN-1. Include all expenses, taxes/duties and contract stamp duty; do not submit an alternative/conditional bid.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Financial / Pass-Fail",
+   "evidence": "Completed FIN-2 and internal reconciliation",
+   "remarks": "Any alternative/conditional bid may be rejected."
+  },
+  {
+   "pages": "118 (PDF 121)",
+   "section": "Technical Proposal Forms",
+   "reference": "Technical Proposal Forms Checklist",
+   "description": "Complete the Technical Proposal Standard Forms Checklist covering TECH-1, JV attachment/POA if applicable, TECH-4, TECH-5, TECH-6, Annexure-A and Annexure-A(1).",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Completed Technical Proposal Forms Checklist",
+   "remarks": "Use as final assembly control."
+  },
+  {
+   "pages": "118 (PDF 121)",
+   "section": "Technical Proposal Forms",
+   "reference": "Initialing Requirement",
+   "description": "Ensure all pages of the original Technical and Financial Proposal are initialed by the same authorized representative who signs the proposal.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Initialed proposal PDFs / signed originals as applicable",
+   "remarks": "Perform this only after final pagination and document assembly."
+  },
+  {
+   "pages": "119 (PDF 122)",
+   "section": "Technical Proposal Forms",
+   "reference": "Eligibility Criteria Checklist",
+   "description": "Complete the Eligibility Criteria Checklist and place it at the top of the proposal. Insert the exact proposal page number for each supporting document.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Completed page-referenced Eligibility Checklist",
+   "remarks": "Final page references must be updated after PDF consolidation."
+  },
+  {
+   "pages": "120-121 (PDF 123-124)",
+   "section": "Technical Proposal Forms",
+   "reference": "Historical Contract Non-Performance / Pending Litigation",
+   "description": "Complete the detailed procurement form for historical contract non-performance, debarment, pending litigation and court/arbitral award history. If none, tick the appropriate “not debarred/no consistent history” options and state NIL where applicable. For a JV, complete the form for the Applicant and each JV member.",
+   "mandatory": "Recommended / Included Form",
+   "evaluation_impact": "Compliance / Due Diligence",
+   "evidence": "Completed form for Applicant; separate completed form for each JV member if applicable",
+   "remarks": "Complete for the Applicant and each JV member, if bidding as a JV."
+  },
+  {
+   "pages": "122 (PDF 125)",
+   "section": "Technical Proposal Forms",
+   "reference": "Average Annual Turnover",
+   "description": "Complete the Average Annual Turnover form for the relevant years and calculate PKR equivalent/average; support it with the financial evidence required by eligibility criteria. For a JV, the form is to be filled for the Applicant and each JV member.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Financial Capacity",
+   "evidence": "Completed turnover form + supporting financial evidence; separate form for each JV member if applicable",
+   "remarks": "For a JV, the form states it should be filled for the Applicant and each JV member."
+  },
+  {
+   "pages": "15 / 118-119 (PDF 18 / 121-122)",
+   "section": "Final Bid Assembly & Submission QA",
+   "reference": "Final Technical Pack QA",
+   "description": "Assemble the Technical Proposal in the prescribed order, validate all forms/evidence, update page references, check signatures/initials, and confirm no financial price appears in the Technical Proposal.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail / Compliance",
+   "evidence": "Final Technical Proposal PDF",
+   "remarks": "Run a second-person QA before upload."
+  },
+  {
+   "pages": "15 / 96-97 (PDF 18 / 99-100)",
+   "section": "Final Bid Assembly & Submission QA",
+   "reference": "Final Financial Pack QA",
+   "description": "Assemble FIN-1 and FIN-2 separately, reconcile totals, verify taxes/expenses are included and remove any conditional wording.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Financial / Pass-Fail",
+   "evidence": "Final Financial Proposal PDF",
+   "remarks": "FIN-1 and FIN-2 must match exactly."
+  },
+  {
+   "pages": "17 (PDF 20)",
+   "section": "Final Bid Assembly & Submission QA",
+   "reference": "EPADS Upload & Verification",
+   "description": "Upload the final Technical and Financial submissions through EPADS v2.0, verify each file opens correctly and is placed in the correct envelope/category, then retain submission confirmation.",
+   "mandatory": "Yes",
+   "evaluation_impact": "Pass/Fail",
+   "evidence": "EPADS upload receipt / submission confirmation",
+   "remarks": "Submit ahead of the 2:00 PM deadline to allow time for upload issues."
+  }
+ ]
+}

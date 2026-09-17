@@ -208,7 +208,8 @@ def _heuristic_sections(raw: RawDoc) -> tuple[list[Section], dict]:
 
 def _llm_sections(raw: RawDoc) -> tuple[list[Section], dict]:
     """Ask the chat model to map unstructured prose onto the six sections."""
-    if not llm.is_available():
+    task_model = llm.extraction_model()
+    if not llm.is_available(task_model["provider"]):
         return [], {}
 
     text = base.clean_text(raw.text)[:LLM_SAMPLE_CHARS]
@@ -234,7 +235,7 @@ def _llm_sections(raw: RawDoc) -> tuple[list[Section], dict]:
             "You structure business case studies into labelled sections. "
             "Reply with JSON only."
         ),
-        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
+        model=task_model,
     )
     if not isinstance(result, dict):
         return [], {}

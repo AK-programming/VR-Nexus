@@ -20,12 +20,13 @@
  *    what the shape does.
  */
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatCount, formatLongDate } from '@/lib/formatting'
 import type { AnalysisPoint, AnalysisRange } from '@/models/dashboard'
 import { Panel } from '@/components/dashboard/Panel'
 import { BarChartIcon } from '@/components/ui/icons'
+import { usePrefersReducedMotion } from '@/hooks/usePrefersReducedMotion'
 
 /* --color-brand-500, --color-hairline, --color-neutral-500, --color-surface. */
 const BRAND = '#e8151b'
@@ -38,30 +39,6 @@ const RANGE_OPTIONS: { value: AnalysisRange; label: string }[] = [
   { value: 'last_month', label: 'Last month' },
   { value: 'last_90_days', label: '90 days' },
 ]
-
-/**
- * Read synchronously in the initialiser rather than in an effect: Recharts starts
- * its draw animation on first render, and an effect that lands after paint would
- * switch the animation off only once the user had already seen it.
- */
-function usePrefersReducedMotion(): boolean {
-  const [prefersReduced, setPrefersReduced] = useState(
-    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  )
-
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
-
-    function handleChange(event: MediaQueryListEvent) {
-      setPrefersReduced(event.matches)
-    }
-
-    query.addEventListener('change', handleChange)
-    return () => query.removeEventListener('change', handleChange)
-  }, [])
-
-  return prefersReduced
-}
 
 /* Recharts hands the tooltip the hovered point wrapped in a payload array. Only the
    two fields this tooltip reads are declared, and all of them are optional, because

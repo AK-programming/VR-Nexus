@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import get_current_user
+from app.api.deps import require_feature
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models import Chunk, Document, IndexJob
@@ -23,6 +23,7 @@ from app.models.enums import (
     DocumentCategory,
     DocumentFileType,
     DocumentTrainingStatus,
+    FeatureKey,
     JOB_STAGE_LABELS as STAGE_LABELS,
     JobStage,
 )
@@ -107,7 +108,7 @@ async def upload_document(
     geography: str = Form(""),
     keywords: str = Form(""),
     doc_type: str = Form(""),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> UploadResponse:
     """Store one file in a category and report any duplicate warning.
@@ -192,7 +193,7 @@ async def upload_document(
 async def check_duplicate(
     file: UploadFile = File(...),
     category: DocumentCategory | None = Form(None),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> DuplicateCheckResult:
     """Dry-run duplicate check (LIB-UI-06) — nothing is stored.
@@ -219,7 +220,7 @@ async def check_duplicate(
 def train(
     payload: TrainRequest,
     force: bool = Query(False, description="Re-index documents already indexed."),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> TrainResponse:
     """Queue indexing for the named documents, or for everything still pending.
@@ -276,7 +277,7 @@ def train(
 @router.post("/documents/{document_id}/retrain", response_model=JobOut)
 def retrain(
     document_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> JobOut:
     """Re-index a single document (LIB-IDX-07).
@@ -306,7 +307,7 @@ def list_documents(
     doc_status: DocumentTrainingStatus | None = Query(None, alias="status"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> list[DocumentOut]:
     stmt = select(Document).order_by(Document.created_at.desc())
@@ -323,7 +324,7 @@ def list_documents(
 def get_document(
     document_id: uuid.UUID,
     include_chunks: bool = Query(False),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> DocumentDetailOut:
     if include_chunks:
@@ -353,7 +354,7 @@ def get_document(
 )
 def delete_document(
     document_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> None:
     document = _get_document(db, document_id)
@@ -368,7 +369,7 @@ def delete_document(
 
 @router.get("/stats")
 def stats(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Per-category counts for the UI tabs (LIB-UI-01)."""
@@ -406,7 +407,7 @@ def stats(
 @router.get("/jobs/{job_id}", response_model=JobOut)
 def get_job(
     job_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> JobOut:
     """Current job state.
@@ -423,7 +424,7 @@ def get_job(
 @router.post("/jobs/{job_id}/ws-ticket", response_model=WsTicketOut)
 def create_job_ws_ticket(
     job_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> WsTicketOut:
     """Mint a one-shot ticket for /ws/library/{job_id}.
@@ -443,7 +444,7 @@ def create_job_ws_ticket(
 @router.get("/documents/{document_id}/jobs", response_model=list[JobOut])
 def list_document_jobs(
     document_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> list[JobOut]:
     _get_document(db, document_id)
@@ -465,7 +466,7 @@ def search_library(
     category: DocumentCategory | None = None,
     limit: int = Query(10, ge=1, le=50),
     min_similarity: float = Query(0.0, ge=0.0, le=1.0),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> SearchResponse:
     """Semantic retrieval over the indexed library.
@@ -486,7 +487,7 @@ def search_library(
 def get_image(
     document_id: uuid.UUID,
     image_name: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     """Serve one extracted image by name."""
@@ -514,7 +515,7 @@ def get_image(
 @router.get("/documents/{document_id}/file")
 def get_document_file(
     document_id: uuid.UUID,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_feature(FeatureKey.DOCUMENTS)),
     db: Session = Depends(get_db),
 ) -> FileResponse:
     """Serve the document's own uploaded file.
@@ -556,7 +557,10 @@ def get_document_file(
 @router.post("/ask", response_model=AnswerOut)
 def ask_library(
     payload: AskRequest,
-    user: User = Depends(get_current_user),
+    # AI_ASSISTANT, not DOCUMENTS - this is the one route in this file that
+    # belongs to a different sidebar section (AI Assistant reads the same
+    # index, but a user can be granted one section without the other).
+    user: User = Depends(require_feature(FeatureKey.AI_ASSISTANT)),
     db: Session = Depends(get_db),
 ) -> AnswerOut:
     """Answer a question from the library, with citations.
@@ -577,10 +581,11 @@ def ask_library(
         payload.question,
         category=payload.category,
         limit=payload.limit,
+        user_id=user.id,
     )
 
 
 @router.get("/stages")
-def stages(user: User = Depends(get_current_user)) -> dict:
+def stages(user: User = Depends(require_feature(FeatureKey.DOCUMENTS))) -> dict:
     """The LIB-UI-05 stage labels, so the UI does not hardcode them."""
     return {"stages": [{"value": s.value, "label": STAGE_LABELS[s]} for s in JobStage]}

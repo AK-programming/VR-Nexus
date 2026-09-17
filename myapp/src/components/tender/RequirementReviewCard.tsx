@@ -19,6 +19,7 @@ import type { EvidenceMatch, Requirement } from '@/models/tenders'
 import {
   EVALUATION_IMPACT_LABELS,
   MATCH_TYPE_LABELS,
+  OWNER_HINT_LABELS,
   requirementPriority,
   REQUIREMENT_PRIORITY_LABELS,
 } from '@/models/tenders'
@@ -175,11 +176,19 @@ export function RequirementReviewCard({
     .filter(Boolean)
     .join(' · ')
 
-  /* The per-member responsibility split plus anything extra this tender carried,
-     shown verbatim so the screen and the exported tracker agree. */
+  /* Who owns this, plus anything extra this tender carried, shown verbatim so
+     the screen and the exported tracker agree.
+
+     `responsibility` now holds an owner hint from a fixed set (BD, Technical,
+     Finance-Legal, HR, Joint), which the workbook turns into one "Yes" across
+     its department columns. It is shown here under a friendlier label; an
+     unrecognised value (a person's name, from the older schema) falls through
+     unchanged rather than being hidden. The DPL / PRIME / The Tulepaak rows
+     below are legacy and appear only for tenders analysed before that change,
+     since `.filter` drops every empty entry. */
   const detailEntries = (
     [
-      ['Responsibility', requirement.responsibility],
+      ['Owner', OWNER_HINT_LABELS[requirement.responsibility ?? ''] ?? requirement.responsibility],
       ['DPL', requirement.dpl],
       ['PRIME', requirement.prime],
       ['The Tulepaak', requirement.the_t],

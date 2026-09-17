@@ -1,40 +1,56 @@
-# Root dev-orchestration deps (concurrently). The frontend has its own
-# myapp/.gitignore for its node_modules.
-/node_modules/
+# ===========================================================================
+# VR-Nexus .gitignore
+# ===========================================================================
 
-# Local secrets — never commit filled-in env files.
+# --- Environment files (contain secrets) ------------------------------------
 .env
+.env.production
+.env.local
+.env.*.local
 backend/.env
-.env.*
-!.env.example
 
-# Python
+# --- Python -----------------------------------------------------------------
 __pycache__/
 *.py[cod]
-*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
 .venv/
 venv/
-backend/.venv/
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
+*.so
 
-# Frontend build output
+# --- Node / Frontend --------------------------------------------------------
+node_modules/
+myapp/node_modules/
 myapp/dist/
-myapp/dist-ssr/
+myapp/.vite/
 *.tsbuildinfo
 
-# Runtime uploads and generated files
-backend/storage/
+# --- Storage (local dev uploads, not tracked) -------------------------------
+storage/
+/data/
 
-# Logs
+# --- IDE / Agent Tooling ----------------------------------------------------
+.vscode/
+.idea/
+.claude/
+Claude outputs/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Docker -----------------------------------------------------------------
+# Docker volumes are not in the repo, but local overrides might be.
+docker-compose.override.yml
+
+# --- Logs -------------------------------------------------------------------
 *.log
 logs/
 
-# Editor and local agent tooling (not part of the application)
-.vscode/
-.claude/
-
-# OS
-.DS_Store
-Thumbs.db
+# --- Test / Coverage --------------------------------------------------------
+.coverage
+htmlcov/
+.pytest_cache/

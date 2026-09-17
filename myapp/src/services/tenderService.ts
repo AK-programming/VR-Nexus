@@ -23,6 +23,8 @@ import { api, websocketUrl, type CallOptions } from '@/lib/apiClient'
 import type {
   EvaluationImpact,
   EvidenceMatch,
+  ExcelTemplate,
+  ExcelTemplateResponse,
   MatchReviewUpdate,
   MatchType,
   MatchReviewStatus,
@@ -34,6 +36,7 @@ import type {
   TenderUpdate,
   TenderUploadResponse,
 } from '@/models/tenders'
+import type { TenderUsage } from '@/models/usage'
 
 const BASE = '/api/tenders'
 
@@ -144,6 +147,19 @@ export function getReport(tenderId: string, options: CallOptions = {}): Promise<
   return api.get<TenderReport>(`${BASE}/${tenderId}/report`, options)
 }
 
+/**
+ * `GET /api/tenders/{id}/usage` — what this tender's own Anthropic API calls
+ * (per-chunk extraction plus the one metadata call) cost and how long they
+ * took. Backs the per-tender usage badge on Tender Review. Lives here rather
+ * than usageService.ts because it is scoped by tender id like every other
+ * function in this file, and any tender-analysis user can read their own
+ * tender's usage — this is not an admin-only route like the rest of the API
+ * Usage feature (see backend/app/api/routes/tenders.py's get_tender_usage).
+ */
+export function getTenderUsage(tenderId: string, options: CallOptions = {}): Promise<TenderUsage> {
+  return api.get<TenderUsage>(`${BASE}/${tenderId}/usage`, options)
+}
+
 /* -------------------------------------------------------------------------- */
 /* Uploading                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -200,6 +216,41 @@ export function reviewMatch(
 }
 
 /**
+ * `POST /api/tenders/{id}/matches/bulk-accept` — accept every still-PENDING
+ * match at or above `minConfidence` in one call, for a reviewer who has
+ * decided a whole confidence band is trustworthy rather than clicking
+ * "Accept" on each row. Returns how many it actually accepted.
+ */
+export function bulkAcceptMatches(
+  tenderId: string,
+  minConfidence: number,
+  options: CallOptions = {},
+): Promise<{ accepted_count: number }> {
+  return api.postJson<{ accepted_count: number }>(
+    `${BASE}/${tenderId}/matches/bulk-accept`,
+    { min_confidence: minConfidence },
+    options,
+  )
+}
+
+/**
+ * `POST /api/tenders/{id}/matches/bulk-reject` — reject every still-PENDING
+ * match at or below `maxConfidence` in one call, the mirror of
+ * `bulkAcceptMatches` for the weak end of the review queue.
+ */
+export function bulkRejectMatches(
+  tenderId: string,
+  maxConfidence: number,
+  options: CallOptions = {},
+): Promise<{ rejected_count: number }> {
+  return api.postJson<{ rejected_count: number }>(
+    `${BASE}/${tenderId}/matches/bulk-reject`,
+    { max_confidence: maxConfidence },
+    options,
+  )
+}
+
+/**
  * `POST /api/tenders/{id}/finalize` — lock the analysis in, re-assemble the
  * output from accepted matches, and move the tender to FINALIZED (which also
  * closes the progress socket). Returns the updated detail.
@@ -251,6 +302,69 @@ export function deleteTender(tenderId: string, options: CallOptions = {}): Promi
  */
 export function reprocessTender(tenderId: string, options: CallOptions = {}): Promise<TenderDetail> {
   return api.postEmpty<TenderDetail>(`${BASE}/${tenderId}/reprocess`, options)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Excel export customization                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `GET /api/users/me/excel-template` — the signed-in user's saved default
+ * export shape. `template: null` means they've never customized it, so the
+ * platform's own column layout applies.
+ */
+export function getMyExcelTemplate(options: CallOptions = {}): Promise<ExcelTemplateResponse> {
+  return api.get<ExcelTemplateResponse>('/api/users/me/excel-template', options)
+}
+
+/**
+ * `PUT /api/users/me/excel-template` — save (or, with `template: null`, clear)
+ * the account's reusable default. Applies to tenders generated or
+ * regenerated from now on; does not touch any existing output file.
+ */
+export function setMyExcelTemplate(
+  template: ExcelTemplate | null,
+  options: CallOptions = {},
+): Promise<ExcelTemplateResponse> {
+  return api.putJson<ExcelTemplateResponse>('/api/users/me/excel-template', { template }, options)
+}
+
+/** `GET /api/tenders/{id}/excel-template` — this tender's own override, if any. */
+export function getTenderExcelTemplate(
+  tenderId: string,
+  options: CallOptions = {},
+): Promise<ExcelTemplateResponse> {
+  return api.get<ExcelTemplateResponse>(`${BASE}/${tenderId}/excel-template`, options)
+}
+
+/**
+ * `PUT /api/tenders/{id}/excel-template` — save (or, with `template: null`,
+ * clear back to the account default) this tender's override. The server
+ * regenerates the output zip immediately, so `getTender` right after this
+ * resolves reflects the new format.
+ */
+export function setTenderExcelTemplate(
+  tenderId: string,
+  template: ExcelTemplate | null,
+  options: CallOptions = {},
+): Promise<ExcelTemplateResponse> {
+  return api.putJson<ExcelTemplateResponse>(
+    `${BASE}/${tenderId}/excel-template`,
+    { template },
+    options,
+  )
+}
+
+/**
+ * `POST /api/tenders/{id}/excel-template/regenerate` — rebuild this tender's
+ * workbook/zip from whichever template currently applies, without changing
+ * the template itself.
+ */
+export function regenerateTenderExcel(
+  tenderId: string,
+  options: CallOptions = {},
+): Promise<ExcelTemplateResponse> {
+  return api.postEmpty<ExcelTemplateResponse>(`${BASE}/${tenderId}/excel-template/regenerate`, options)
 }
 
 /* -------------------------------------------------------------------------- */

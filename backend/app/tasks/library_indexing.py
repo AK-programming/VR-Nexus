@@ -196,6 +196,9 @@ def _run_pipeline(db, document: Document, job: IndexJob, use_llm: bool) -> dict:
         document.category.value,
         user_supplied=user_supplied,
         use_llm=use_llm,
+        db=db,
+        document_id=document.id,
+        user_id=document.uploaded_by,
     )
 
     document.doc_type = extracted.doc_type[:128]

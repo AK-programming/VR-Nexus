@@ -37,6 +37,14 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=72)  # 72 = bcrypt's hard input limit
 
 
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
 class MessageOut(BaseModel):
     message: str
 
@@ -50,6 +58,11 @@ class UserOut(BaseModel):
     role: UserRole
     is_active: bool
     last_login_at: Optional[datetime] = None
+    # Which optional sections this account can see - empty for a fresh USER,
+    # ignored for ADMIN (the frontend already treats role == admin as full
+    # access, this just rides along on login/me/register/refresh so a USER's
+    # sidebar knows what to show without a second request).
+    feature_access: list[str] = []
 
     model_config = {"from_attributes": True}
 

@@ -16,15 +16,18 @@ from app.api.deps import get_current_user
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import (
+    EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES,
     PASSWORD_RESET_TOKEN_EXPIRE_MINUTES,
     TokenType,
     create_access_token,
+    create_email_verification_token,
     create_password_reset_token,
     create_refresh_token,
     decode_token,
     hash_password,
     verify_password,
 )
+from app.services.email_verification_tokens import redeem as redeem_email_verification_token
 from app.services.password_reset_tokens import redeem as redeem_password_reset_token
 from app.models.user import User
 from app.schemas.auth import (
@@ -33,14 +36,17 @@ from app.schemas.auth import (
     MessageOut,
     RefreshRequest,
     RegisterRequest,
+    ResendVerificationRequest,
     ResetPasswordRequest,
     TokenResponse,
     UserOut,
+    VerifyEmailRequest,
 )
 from app.services.account_email import (
     AccountEmailFailed,
     AccountEmailNotConfigured,
     send_password_reset_email,
+    send_verification_email,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -49,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register(data: RegisterRequest, db: Session = Depends(get_db)):
+async def register(data: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == data.email).first()
     if existing is not None:
         # Same error whether the email exists or is malformed in some other
@@ -70,9 +76,40 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
         phone_number=data.phone_number,
         company=data.company,
     )
+
+    # Email verification (client request: catch a mistyped or made-up
+    # address at signup). login() below refuses an account until
+    # email_verified_at is set, so a real address is the only kind that can
+    # ever actually sign in - "damy12237451098571@gmail.com" or similar
+    # passes EmailStr's format check but this is the step that actually
+    # requires someone to open an inbox and click a link.
+    #
+    # If SMTP isn't configured on this deployment there is no way to ever
+    # send that link, and gating login on an unreachable confirmation step
+    # would just brick every account - so verification is a no-op (account
+    # starts pre-verified) rather than enforced, exactly like
+    # smtp_configured already gates whether forgot-password/support-email
+    # work at all elsewhere in this file.
+    if not settings.smtp_configured:
+        user.email_verified_at = datetime.now(timezone.utc)
+
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    if settings.smtp_configured:
+        token = create_email_verification_token(user.id)
+        verify_url = f"{settings.PASSWORD_RESET_URL_BASE}/verify-email?token={token}"
+        try:
+            await send_verification_email(user.email, user.name, verify_url)
+        except (AccountEmailNotConfigured, AccountEmailFailed) as exc:
+            # The account still exists and is usable once verified - do not
+            # fail registration over a mail-send hiccup. They can retry via
+            # POST /api/auth/resend-verification (surfaced as a "Resend"
+            # action on the sign-in screen once they hit the "please verify"
+            # error there).
+            logger.warning("Verification email failed to send to %s: %s", user.email, exc)
+
     return user
 
 
@@ -107,6 +144,25 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account has been disabled")
+
+    # Email verification gate - after the password check (a wrong password
+    # must still read as "Incorrect email or password", not leak "this
+    # account exists and needs verification" to someone who doesn't actually
+    # know the password) and after is_active (a disabled account should say
+    # so, not this). `code` in the structured detail is what the frontend
+    # branches on (see classifyAuthError in authService.ts) rather than
+    # matching this sentence, which is free to be reworded later.
+    if user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "message": (
+                    "Please verify your email before signing in. Check your inbox for "
+                    "the confirmation link, or request a new one."
+                ),
+                "code": "email_not_verified",
+            },
+        )
 
     # Successful login - reset the lockout counter and record the login time.
     user.failed_login_attempts = 0
@@ -224,3 +280,73 @@ def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return MessageOut(message="Your password has been reset. Sign in with your new password.")
+
+
+@router.post("/verify-email", response_model=MessageOut)
+def verify_email(data: VerifyEmailRequest, db: Session = Depends(get_db)):
+    """Redeems the token from the link register() emailed. Single-use, same
+    mechanism as reset_password above - a still-valid copy sitting in an
+    inbox after the first click cannot confirm the account a second time,
+    though since confirming twice is harmless anyway (unlike a password
+    reset) the only real effect of that is a slightly confusing "invalid or
+    expired" if someone double-clicks the link, not a security concern."""
+    invalid_token = HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="This verification link is invalid or has expired. Request a new one.",
+    )
+
+    payload = decode_token(data.token)
+    if payload is None or payload.get("type") != TokenType.EMAIL_VERIFICATION.value:
+        raise invalid_token
+
+    jti = payload.get("jti")
+    if not jti or not redeem_email_verification_token(
+        jti, EMAIL_VERIFICATION_TOKEN_EXPIRE_MINUTES * 60
+    ):
+        raise invalid_token
+
+    user = db.get(User, payload.get("sub"))
+    if user is None:
+        raise invalid_token
+
+    if user.email_verified_at is None:
+        user.email_verified_at = datetime.now(timezone.utc)
+        db.commit()
+
+    return MessageOut(message="Your email is verified. You can sign in now.")
+
+
+@router.post("/resend-verification", response_model=MessageOut)
+async def resend_verification(data: ResendVerificationRequest, db: Session = Depends(get_db)):
+    """Re-sends the confirmation link - reached from the sign-in screen's
+    "Resend verification email" action once a login attempt comes back
+    "please verify your email" (see classifyAuthError's `unverified` kind
+    in authService.ts). Same explicit-error posture as forgot_password
+    above rather than a non-committal "if this account exists..." - this is
+    a small internal tool with a known roster, not a public signup service
+    worth guarding against email enumeration."""
+    user = db.query(User).filter(User.email == data.email).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account is registered with that email. Please register first.",
+        )
+
+    if user.email_verified_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This email is already verified. Sign in instead.",
+        )
+
+    token = create_email_verification_token(user.id)
+    verify_url = f"{settings.PASSWORD_RESET_URL_BASE}/verify-email?token={token}"
+
+    try:
+        await send_verification_email(user.email, user.name, verify_url)
+    except AccountEmailNotConfigured as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except AccountEmailFailed as exc:
+        logger.warning("Resend verification email failed for %s: %s", user.email, exc)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    return MessageOut(message="A new verification link has been sent to your email.")

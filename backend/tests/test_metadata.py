@@ -110,7 +110,7 @@ def test_llm_only_fills_fields_still_blank(monkeypatch):
         seen["prompt"] = prompt
         return {"geography": "Sindh", "client": "Should Be Ignored"}
 
-    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "is_available", lambda provider="anthropic": True)
     monkeypatch.setattr(llm, "complete_json", fake_complete_json)
 
     result = metadata.extract(
@@ -138,7 +138,7 @@ def test_llm_is_skipped_when_nothing_is_missing(monkeypatch):
     from app.services.library import llm
 
     called = []
-    monkeypatch.setattr(llm, "is_available", lambda: True)
+    monkeypatch.setattr(llm, "is_available", lambda provider="anthropic": True)
     monkeypatch.setattr(llm, "complete_json", lambda *a, **k: called.append(1) or {})
 
     metadata.extract(

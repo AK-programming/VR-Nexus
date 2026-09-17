@@ -129,7 +129,8 @@ def _extract_identifiers(text: str) -> dict[str, str]:
 
 
 def _llm_classify(text: str, filename: str) -> str:
-    if not llm.is_available():
+    task_model = llm.extraction_model()
+    if not llm.is_available(task_model["provider"]):
         return ""
 
     sample = base.clean_text(text)[:LLM_SAMPLE_CHARS]
@@ -151,7 +152,7 @@ def _llm_classify(text: str, filename: str) -> str:
     result = llm.complete_json(
         prompt,
         system="You classify corporate compliance documents. Reply with JSON only.",
-        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
+        model=task_model,
     )
     if not isinstance(result, dict):
         return ""

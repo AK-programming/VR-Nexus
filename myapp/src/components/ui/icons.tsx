@@ -70,6 +70,17 @@ export function UserIcon({ className }: IconProps) {
   )
 }
 
+export function UsersIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <circle cx="9" cy="8.25" r="3.25" />
+      <path d="M3.25 19.25a5.75 5.75 0 0 1 11.5 0" />
+      <path d="M15.5 5.1a3.25 3.25 0 0 1 0 6.3" />
+      <path d="M17.25 13.6a5.75 5.75 0 0 1 3.5 5.65" />
+    </svg>
+  )
+}
+
 export function UserPlusIcon({ className }: IconProps) {
   return (
     <svg {...strokeIcon} className={className}>
@@ -354,6 +365,30 @@ export function CloseIcon({ className }: IconProps) {
     <svg {...strokeIcon} className={className}>
       <path d="m6 6 12 12" />
       <path d="M18 6 6 18" />
+    </svg>
+  )
+}
+
+/** Four corners pulling outward - "expand this to fill the screen". */
+export function MaximizeIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <path d="M9 4.75H6.75A2 2 0 0 0 4.75 6.75V9" />
+      <path d="M15 4.75h2.25a2 2 0 0 1 2 2V9" />
+      <path d="M9 19.25H6.75a2 2 0 0 1-2-2V15" />
+      <path d="M15 19.25h2.25a2 2 0 0 0 2-2V15" />
+    </svg>
+  )
+}
+
+/** The same four corners pulled back in - "leave full screen". */
+export function MinimizeIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <path d="M4.75 9V6.75a2 2 0 0 1 2-2H9" />
+      <path d="M19.25 9V6.75a2 2 0 0 0-2-2H15" />
+      <path d="M4.75 15v2.25a2 2 0 0 0 2 2H9" />
+      <path d="M19.25 15v2.25a2 2 0 0 1-2 2H15" />
     </svg>
   )
 }
@@ -729,6 +764,28 @@ export function HelpCircleIcon({ className }: IconProps) {
       <circle cx="12" cy="12" r="8.75" />
       <path d="M9.75 9.75a2.25 2.25 0 0 1 4.35.75c0 1.5-2.1 2-2.1 3.25" />
       <path d="M12 16.25v.1" />
+    </svg>
+  )
+}
+
+/** A dollar sign, for estimated cost — the API Usage stat tile and its
+ *  Export/cost-metric affordances. */
+export function DollarSignIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <path d="M12 2.75v18.5" />
+      <path d="M16.25 6.75c0-1.66-1.9-3-4.25-3s-4.25 1.34-4.25 3c0 1.66 1.9 2.25 4.25 3s4.25 1.34 4.25 3-1.9 3-4.25 3-4.25-1.34-4.25-3" />
+    </svg>
+  )
+}
+
+/** A calendar with a small dot, for the usage page's date-range control. */
+export function CalendarIcon({ className }: IconProps) {
+  return (
+    <svg {...strokeIcon} className={className}>
+      <rect x="3.75" y="5" width="16.5" height="15.25" rx="2.25" />
+      <path d="M3.75 9.5h16.5" />
+      <path d="M8 3.25v3.5M16 3.25v3.5" />
     </svg>
   )
 }

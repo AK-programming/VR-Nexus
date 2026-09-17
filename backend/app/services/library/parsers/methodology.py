@@ -138,7 +138,8 @@ def _heuristic_sections(raw: RawDoc) -> list[Section]:
 
 def _llm_sections(raw: RawDoc) -> list[Section]:
     """Ask for an ordered phase list when the document has no visible markers."""
-    if not llm.is_available():
+    task_model = llm.extraction_model()
+    if not llm.is_available(task_model["provider"]):
         return []
 
     text = base.clean_text(raw.text)[:LLM_SAMPLE_CHARS]
@@ -162,7 +163,7 @@ def _llm_sections(raw: RawDoc) -> list[Section]:
     result = llm.complete_json(
         prompt,
         system="You structure methodology documents into ordered phases. Reply with JSON only.",
-        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
+        model=task_model,
     )
     if not isinstance(result, dict):
         return []

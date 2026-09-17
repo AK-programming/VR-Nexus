@@ -115,7 +115,7 @@ def no_llm(monkeypatch):
     """LLM off by default. A test that wants the fallback path stubs it itself."""
     from app.services.library import llm
 
-    monkeypatch.setattr(llm, "is_available", lambda: False)
+    monkeypatch.setattr(llm, "is_available", lambda provider="anthropic": False)
 
 
 @pytest.fixture

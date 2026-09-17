@@ -61,11 +61,21 @@ class Requirement(Base, UUIDPKMixin, TimestampMixin):
     # be confirmed with whoever defined the extraction schema (Shaheer) -
     # kept as plain text here since the exact business rules for how
     # these are assigned aren't encoded anywhere in the codebase yet.
-    responsibility: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    dpl: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    prime: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    the_t: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    joint_responsibility: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #
+    # All five of these were originally bounded VARCHARs (responsibility at
+    # 500, the other four at 255). A real tender's responsibility-matrix text
+    # is free-form prose the LLM copies close to verbatim, not a short code,
+    # and a 500-char cap on `responsibility` actually broke a production run
+    # (psycopg.errors.StringDataRightTruncation on INSERT INTO requirements -
+    # one long responsibility line failed the whole batch insert for that
+    # tender's chunk, so nothing was saved and the run died at "extracting").
+    # Unbounded Text, matching `description` below, removes that failure mode
+    # for all five instead of just patching the one that has already bitten.
+    responsibility: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dpl: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    prime: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    the_t: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    joint_responsibility: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     status: Mapped[RequirementStatus] = mapped_column(
         Enum(RequirementStatus, name="requirement_status"),

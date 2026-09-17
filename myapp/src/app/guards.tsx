@@ -14,7 +14,8 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { ROUTES } from '@/constants/routes'
-import { selectIsAuthenticated, useAuthStore } from '@/store/authStore'
+import type { FeatureKey } from '@/models'
+import { selectIsAdmin, selectIsAuthenticated, useAuthStore } from '@/store/authStore'
 
 /**
  * Blocks a page until someone is signed in, and remembers where they were headed
@@ -60,6 +61,78 @@ export function RedirectIfAuthenticated({ children }: { children: ReactNode }) {
 
   if (isAuthenticated && !isBootstrapping) {
     return <Navigate to={ROUTES.home} replace />
+  }
+
+  return <>{children}</>
+}
+
+/**
+ * Blocks a page behind RequireAuth from anyone whose account is not an
+ * admin — the Users page's own guard, since it lists every account and lets
+ * an admin edit what each one can reach.
+ *
+ * Deliberately sends a non-admin to the dashboard rather than to sign-in:
+ * they are signed in, they are just not allowed here, and bouncing them to
+ * the login form would look like a broken session rather than a permissions
+ * boundary.
+ *
+ * This is still only the client's half of the check — see the file
+ * docstring above. `require_role(UserRole.ADMIN)` on every /api/admin/*
+ * route is what actually stops a non-admin from reaching the data; this
+ * guard only stops them from seeing the screen that would ask for it.
+ */
+export function RequireAdmin({ children }: { children: ReactNode }) {
+  const isAdmin = useAuthStore(selectIsAdmin)
+
+  if (!isAdmin) {
+    return <Navigate to={ROUTES.home} replace />
+  }
+
+  return <>{children}</>
+}
+
+/**
+ * Blocks a page behind RequireAuth from an account that has not been granted
+ * the section it belongs to — client follow-up request: Tender Tools has to
+ * genuinely require access rather than just existing as an unenforced
+ * checkbox, and Documents needs to accept either the full `documents` grant
+ * or the narrower `documents_upload` one depending on the route.
+ *
+ * `feature` takes either one key or several. With several, `requireAll`
+ * chooses AND vs OR: Tender Tools passes `['tender_analysis','tender_tools']`
+ * with `requireAll` (it needs both, since the tools reuse tender data), while
+ * a Documents upload route passes `['documents','documents_upload']` without
+ * it (either grant is enough to reach that one screen).
+ *
+ * An admin always passes, before `feature` is even looked at — the same
+ * unconditional bypass `require_feature` on the backend and `RequireAdmin`
+ * both use, so this guard never disagrees with the server about what an
+ * admin can reach.
+ *
+ * Sends a denied user to the dashboard, not to sign-in, for the same reason
+ * `RequireAdmin` does: they are signed in, just not granted this section.
+ */
+export function RequireFeature({
+  feature,
+  requireAll = false,
+  children,
+}: {
+  feature: FeatureKey | FeatureKey[]
+  requireAll?: boolean
+  children: ReactNode
+}) {
+  const isAdmin = useAuthStore(selectIsAdmin)
+  const featureAccess = useAuthStore((state) => state.user?.feature_access ?? [])
+
+  if (!isAdmin) {
+    const required = Array.isArray(feature) ? feature : [feature]
+    const isGranted = requireAll
+      ? required.every((key) => featureAccess.includes(key))
+      : required.some((key) => featureAccess.includes(key))
+
+    if (!isGranted) {
+      return <Navigate to={ROUTES.home} replace />
+    }
   }
 
   return <>{children}</>

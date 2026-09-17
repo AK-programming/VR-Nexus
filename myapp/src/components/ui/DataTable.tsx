@@ -51,8 +51,18 @@ export type Column<T> = {
   sortValue?: (row: T) => SortableValue
   /** Applied to the `th` and every `td` — width, and the responsive hiding above. */
   className?: string
-  /** Right-aligns the column. For figures, so their digits line up on the decimal. */
+  /** Right-aligns the column and switches its digits to tabular-nums. For
+   *  figures — the default alignment for a numeric column is `'right'` so
+   *  they line up on the decimal, per `align` below. */
   numeric?: boolean
+  /**
+   * Overrides a numeric column's alignment. Omit and a numeric column stays
+   * right-aligned (`align` defaults to `numeric ? 'right' : 'left'`) — this
+   * only exists for pages like API Usage, where the figures are short,
+   * single counts rather than a column of numbers meant to be scanned
+   * top-to-bottom, and centering them reads less like a ledger.
+   */
+  align?: 'left' | 'center' | 'right'
 }
 
 type DataTableProps<T> = {
@@ -208,12 +218,12 @@ function SelectionCheckbox({
 function SortButton({
   label,
   state,
-  numeric,
+  align,
   onClick,
 }: {
   label: string
   state: SortDirection | 'none'
-  numeric: boolean
+  align: 'left' | 'center' | 'right'
   onClick: () => void
 }) {
   return (
@@ -223,7 +233,7 @@ function SortButton({
       className={[
         'group flex w-full items-center gap-1.5 rounded-md text-left',
         'transition-colors hover:text-neutral-900',
-        numeric ? 'justify-end' : '',
+        align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : '',
       ].join(' ')}
     >
       {label}
@@ -309,7 +319,15 @@ export function DataTable<T>({
        sr-only element with no positioned ancestor anchors against the document
        root - escaping this table's own overflow-x-auto and every clip above it,
        which can quietly grow the whole page's scroll height. */
-    <div className="relative w-full overflow-x-auto">
+    /* @container: a page that puts this table in a half-width (or narrower)
+       panel — see ApiUsagePage's two-up "By model"/"By purpose" row — can
+       give a column's className a container-query variant (`@sm:table-cell`,
+       `@lg:table-cell`, …) instead of the viewport-keyed `sm:`/`md:`, so a
+       column hides based on THIS table's own rendered width rather than the
+       browser window's. Purely additive: a page that never uses an `@`-
+       prefixed class (every other caller today) is unaffected — this just
+       makes the option available. */
+    <div className="@container relative w-full overflow-x-auto">
       <table className="w-full min-w-full border-collapse text-left">
         {/* Visually hidden rather than absent: it is the table's name, not a title —
             the Panel above already shows a heading and repeating it would be noise. */}
@@ -331,6 +349,10 @@ export function DataTable<T>({
             {columns.map((column) => {
               const isSorted = column.id === sortColumnId
               const state: SortDirection | 'none' = isSorted ? direction : 'none'
+              // See the `align` doc comment on Column: a numeric column is
+              // right-aligned by default, but a page can ask for 'center'
+              // (or 'left') instead without losing the tabular-nums digits.
+              const align = column.align ?? (column.numeric ? 'right' : 'left')
 
               return (
                 <th
@@ -341,7 +363,7 @@ export function DataTable<T>({
                   }
                   className={[
                     headerCell,
-                    column.numeric ? 'text-right' : '',
+                    align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : '',
                     column.className ?? '',
                   ].join(' ')}
                 >
@@ -349,7 +371,7 @@ export function DataTable<T>({
                     <SortButton
                       label={column.header}
                       state={state}
-                      numeric={Boolean(column.numeric)}
+                      align={align}
                       onClick={() => toggleSort(column.id)}
                     />
                   ) : (
@@ -398,18 +420,22 @@ export function DataTable<T>({
                     </td>
                   ) : null}
 
-                  {columns.map((column) => (
-                    <td
-                      key={column.id}
-                      className={[
-                        bodyCell,
-                        column.numeric ? 'text-right tabular-nums' : '',
-                        column.className ?? '',
-                      ].join(' ')}
-                    >
-                      {column.cell(row)}
-                    </td>
-                  ))}
+                  {columns.map((column) => {
+                    const align = column.align ?? (column.numeric ? 'right' : 'left')
+                    return (
+                      <td
+                        key={column.id}
+                        className={[
+                          bodyCell,
+                          column.numeric ? 'tabular-nums' : '',
+                          align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : '',
+                          column.className ?? '',
+                        ].join(' ')}
+                      >
+                        {column.cell(row)}
+                      </td>
+                    )
+                  })}
 
                   {rowActions ? (
                     <td className={`${bodyCell} text-right whitespace-nowrap`}>

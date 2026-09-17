@@ -49,6 +49,19 @@ class Tender(Base, UUIDPKMixin, TimestampMixin):
     total_marks_available: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
     total_marks_captured: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
 
+    # What the tender ITSELF says is on offer, as opposed to
+    # total_marks_available above, which is the sum of the marks extraction
+    # found per requirement. Two separate numbers on purpose: one shipped
+    # tracker reported 222 marks available for a tender whose own evaluation
+    # section says 100, because the scoring table appears twice in the document
+    # and its experience bands ("more than 15 years = 10, 10-15 = 5, 7-10 = 1")
+    # were summed as though a bidder could earn all three. Holding the stated
+    # figure separately is what turns that from a plausible-looking number into
+    # a detectable disagreement - see _marks_reconciliation in
+    # app/tasks/tender_pipeline.py.
+    stated_technical_marks: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    passing_technical_score: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+
     # Top-level tender metadata. Populated best-effort by a single LLM pass over
     # the opening pages during PARSING (see services/extraction.extract_tender_metadata)
     # and correctable by the user via PATCH /api/tenders/{id}. All nullable: an
@@ -101,6 +114,41 @@ class Tender(Base, UUIDPKMixin, TimestampMixin):
     failed_stage: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     error_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # --- extraction warnings (Stage 2 failed-chunk visibility) ---
+    # Set by services/extraction.run_extraction when one or more chunks
+    # failed all MAX_EXTRACTION_RETRIES attempts and were dropped rather than
+    # failing the whole run (tolerated up to MAX_ACCEPTABLE_CHUNK_FAILURE_RATE).
+    # Previously that loss was completely invisible outside the worker log: a
+    # reviewer saw a thin tracker with no way to tell "this document genuinely
+    # has few requirements" apart from "12 pages were silently dropped". Null
+    # when every chunk succeeded. Surfaced in the Excel Summary sheet,
+    # summary.json, and the tender detail API. Cleared on reprocess, like the
+    # rest of the failure record.
+    extraction_warnings: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Stage A page triage: which page spans were judged worth extracting from,
+    # and whether that judgement was acted on. Shape is
+    # {"applied": bool, "reason": str, "spans": [{page_start, page_end, kind,
+    # label}]} - see app/services/section_triage.py, which owns it.
+    #
+    # Persisted rather than recomputed because it is audit material, not a
+    # cache: the workbook's "Excluded sections" sheet is built from it, so a
+    # reviewer can see exactly which pages extraction skipped and why, and
+    # disagree. Null on any tender analysed before triage existed, which reads
+    # back as "not applied".
+    section_triage: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    # --- Excel export customization (per-tender override) ---
+    # Same shape as User.default_excel_template (app/schemas/excel_template.
+    # ExcelTemplate) but scoped to this one tender - set at the "is the
+    # format OK?" check before finalizing, when the user wants THIS tender's
+    # output to differ from their saved default without changing that
+    # default for every other tender. Null means "use the user's saved
+    # default, or the platform default if they haven't set one either".
+    # Applying a template (new or changed) regenerates the workbook via
+    # rebuild_outputs, so output_zip_path always reflects the current value.
+    excel_template_override: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # --- support handoff ---
     # Set when a user pressed "Contact technical support" on a failed tender and

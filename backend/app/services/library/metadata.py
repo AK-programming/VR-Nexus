@@ -9,10 +9,15 @@ machine filled so a reviewer can tell them apart.
 """
 import logging
 import re
+import uuid
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Optional
+
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.models.enums import UsagePurpose
 from app.services.library import llm
 
 logger = logging.getLogger(__name__)
@@ -182,9 +187,19 @@ def extract_heuristic(text: str, filename: str, category: str) -> ExtractedMetad
     return meta
 
 
-def _llm_fill(text: str, filename: str, category: str, missing: list[str]) -> dict:
+def _llm_fill(
+    text: str,
+    filename: str,
+    category: str,
+    missing: list[str],
+    *,
+    db: Optional[Session] = None,
+    document_id: Optional[uuid.UUID] = None,
+    user_id: Optional[uuid.UUID] = None,
+) -> dict:
     """Ask the LLM only about fields still blank."""
-    if not missing or not llm.is_available():
+    task_model = llm.extraction_model()
+    if not missing or not llm.is_available(task_model["provider"]):
         return {}
 
     prompt = (
@@ -206,7 +221,11 @@ def _llm_fill(text: str, filename: str, category: str, missing: list[str]) -> di
     result = llm.complete_json(
         prompt,
         system="You extract structured metadata from business documents. Reply with JSON only.",
-        model=_settings.ANTHROPIC_EXTRACTION_MODEL,
+        model=task_model,
+        db=db,
+        purpose=UsagePurpose.LIBRARY_TAGGING,
+        document_id=document_id,
+        user_id=user_id,
     )
     return result if isinstance(result, dict) else {}
 
@@ -217,11 +236,20 @@ def extract(
     category: str,
     user_supplied: dict | None = None,
     use_llm: bool = True,
+    *,
+    db: Optional[Session] = None,
+    document_id: Optional[uuid.UUID] = None,
+    user_id: Optional[uuid.UUID] = None,
 ) -> ExtractedMetadata:
     """Full LIB-IDX-06 extraction with precedence applied.
 
     `user_supplied` values win outright. Heuristics fill what remains. The LLM is
     consulted only for fields still blank after both, and only when `use_llm`.
+
+    `db`/`document_id`/`user_id` are optional and keyword-only: pass them
+    (the caller in tasks/library_indexing.py always does) to have the
+    resulting LLM call, if any, recorded to llm_usage_events under
+    UsagePurpose.LIBRARY_TAGGING.
     """
     supplied = {k: (v or "").strip() if isinstance(v, str) else v
                 for k, v in (user_supplied or {}).items()}
@@ -255,7 +283,10 @@ def extract(
             if not (meta.keywords if f == "keywords" else getattr(meta, f))
         ]
         if missing:
-            filled = _llm_fill(text, filename, category, missing)
+            filled = _llm_fill(
+                text, filename, category, missing,
+                db=db, document_id=document_id, user_id=user_id,
+            )
             for field_name in missing:
                 value = filled.get(field_name)
                 if not value:

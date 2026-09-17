@@ -41,6 +41,25 @@ export function formatLongDate(isoDate: string): string {
   })
 }
 
+/** "2:15 PM". For the Usage chart's per-call x-axis/tooltip, where the
+ *  point is one API call rather than a whole day — see UsageDailyPoint's
+ *  `time` field. `toLocaleTimeString` rather than a hand-rolled 12-hour
+ *  conversion for the same reason the date formatters use `toLocaleDateString`:
+ *  DST and locale edge cases are the runtime's problem, not ours. */
+export function formatTimeOfDay(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp)
+
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
 /**
  * "just now", "10 min ago", "2 hours ago", "3 days ago", then a date.
  *
@@ -175,4 +194,52 @@ export function formatRole(role: string | null | undefined): string {
 export function formatFirstName(name: string | null | undefined): string {
   const words = (name ?? '').trim().split(/\s+/).filter(Boolean)
   return words[0] ?? ''
+}
+
+/**
+ * "$0.0042", "$1.23", "$0.00" — an estimated Anthropic API cost, never a
+ * real invoice line, which is why every value this touches is labelled
+ * "estimated" in the UI it appears in.
+ *
+ * A tender's per-chunk extraction cost is routinely a fraction of a cent,
+ * so a flat two-decimal `toFixed(2)` would print "$0.00" for almost every
+ * real call and make the feature look broken. This keeps enough
+ * significant digits to show a non-zero value below a cent, and collapses
+ * to a plain two-decimal figure once the amount is large enough that the
+ * extra precision would just be noise.
+ */
+export function formatCostUsd(value: number): string {
+  if (!Number.isFinite(value) || value === 0) {
+    return '$0.00'
+  }
+
+  const abs = Math.abs(value)
+  const decimals = abs < 0.01 ? 4 : abs < 1 ? 3 : 2
+  return `$${value.toFixed(decimals)}`
+}
+
+/**
+ * "842ms", "3.2s", "1m 14s" — a latency or elapsed-time figure. Milliseconds
+ * below one second (most single API calls), one decimal of seconds below a
+ * minute (a tender's total extraction time), minutes+seconds above that (a
+ * large tender's full run) — so the number reads at whichever granularity
+ * is actually meaningful at its own size.
+ */
+export function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) {
+    return '-'
+  }
+
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`
+  }
+
+  const totalSeconds = ms / 1000
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}s`
+  }
+
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = Math.round(totalSeconds - minutes * 60)
+  return `${minutes}m ${seconds}s`
 }

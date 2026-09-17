@@ -17,16 +17,26 @@
  * the horizontal one is a single bar behind all nine, positioned from the first
  * dot's centre to the last so it cannot overshoot the ends.
  *
- * Colour follows the status pills rather than the brand: emerald for a finished
- * stage, sky for the one running, neutral for one not started, rose for one that
- * failed. The percentage bar underneath is brand red, matching the dashboard's
- * progress bars — a proportion is not a state, and the two want different colours.
+ * Colour: emerald for a finished stage, neutral for one not started, rose for
+ * one that failed - and rose for the one running too, not sky. A node that is
+ * actively being worked on is the one node on the rail that changes on its
+ * own without anyone touching anything, so it gets the one animated treatment
+ * (a plain `animate-ping` ring behind the spinner, no bespoke keyframes): the
+ * ring radiates outward and fades, repeating for as long as that stage is in
+ * flight, then the node settles into solid emerald once it is done. Rose
+ * rather than sky for "running" also means the rail and the percentage bar
+ * underneath now tell the same two-colour story: emerald for ground already
+ * covered, rose (pulsing, only while something is actually in flight) for
+ * where the work is happening right now. A failed node keeps the plain solid
+ * rose it always had - it is stopped, not pulsing, so it must not look like
+ * the same state as "running".
  */
 
 import {
   PIPELINE_STAGES,
   STAGE_DESCRIPTIONS,
   STAGE_LABELS,
+  isInFlight,
   stageStates,
 } from '@/models/tenders'
 import type { PipelineStage, StageState, TenderStatus } from '@/models/tenders'
@@ -37,14 +47,14 @@ const NODE_STYLES: Record<StageState, string> = {
   // Border matches the fill so the outer ring is a crisp solid edge, not the soft
   // lighter halo (a -300 border on a -500 fill) that read as blurry at 28px.
   done: 'border-emerald-500 bg-emerald-500 text-white',
-  active: 'border-sky-500 bg-sky-500 text-white',
+  active: 'border-rose-500 bg-rose-500 text-white',
   pending: 'border-neutral-300 bg-surface text-neutral-400',
   failed: 'border-rose-500 bg-rose-500 text-white',
 }
 
 const LABEL_STYLES: Record<StageState, string> = {
   done: 'text-neutral-900',
-  active: 'text-sky-800 dark:text-sky-300',
+  active: 'text-rose-700 dark:text-rose-300',
   pending: 'text-neutral-500',
   failed: 'text-rose-800 dark:text-rose-300',
 }
@@ -116,6 +126,8 @@ export function TenderTimeline({ status, failedAt, progress, message }: TenderTi
   /* Half a node's share of the row, which is where the first and last dots sit. */
   const trackInset = `${100 / (nodeCount * 2)}%`
 
+  const clampedProgress = Math.min(100, Math.max(0, progress))
+
   /** The line to read under the track: what is happening, and what the pipeline said. */
   const currentStage: PipelineStage | undefined =
     status === 'failed'
@@ -164,14 +176,26 @@ export function TenderTimeline({ status, failedAt, progress, message }: TenderTi
                 />
               ) : null}
 
-              <span
-                className={[
-                  'relative z-10 flex size-7 shrink-0 items-center justify-center rounded-full border-2',
-                  'transition-colors duration-300',
-                  NODE_STYLES[state],
-                ].join(' ')}
-              >
-                <NodeMark state={state} />
+              <span className="relative z-10 flex size-7 shrink-0 items-center justify-center">
+                {/* The "actively working" pulse: a ring that radiates out from the
+                    node and fades, repeating for as long as this stage is running.
+                    Absent on every other state - done and pending are quiet, and
+                    failed is a stop, not a pulse. */}
+                {state === 'active' ? (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 animate-ping rounded-full bg-rose-500/60"
+                  />
+                ) : null}
+                <span
+                  className={[
+                    'relative flex size-7 shrink-0 items-center justify-center rounded-full border-2',
+                    'transition-colors duration-300',
+                    NODE_STYLES[state],
+                  ].join(' ')}
+                >
+                  <NodeMark state={state} />
+                </span>
               </span>
 
               <div className="min-w-0 md:w-full">
@@ -199,17 +223,30 @@ export function TenderTimeline({ status, failedAt, progress, message }: TenderTi
 
       <div className="mt-6 flex flex-col gap-2 border-t border-hairline pt-4 sm:flex-row sm:items-center sm:gap-5">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span
-            aria-hidden="true"
-            className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-neutral-200"
-          >
-            <span
-              className={[
-                'block h-full rounded-full transition-[width] duration-300',
-                status === 'failed' ? 'bg-rose-500' : 'bg-brand-500',
-              ].join(' ')}
-              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-            />
+          <span aria-hidden="true" className="relative h-1.5 min-w-0 flex-1">
+            <span className="block h-1.5 w-full overflow-hidden rounded-full bg-neutral-200">
+              <span
+                className={[
+                  'block h-full rounded-full transition-[width] duration-300',
+                  status === 'failed' ? 'bg-rose-500' : 'bg-emerald-500',
+                ].join(' ')}
+                style={{ width: `${clampedProgress}%` }}
+              />
+            </span>
+            {/* The "still working" pulse: only while a stage is actually in
+                flight, sitting right at the leading edge of the fill so it
+                reads as "this is where the work is happening now", not just a
+                decoration. Absent once the run is settled (reviewed, finalized
+                or failed) — there is nothing active left to point at. */}
+            {isInFlight(status) ? (
+              <span
+                className="pointer-events-none absolute top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+                style={{ left: `${clampedProgress}%` }}
+              >
+                <span className="absolute size-3 animate-ping rounded-full bg-rose-500/70" />
+                <span className="relative size-2 rounded-full bg-rose-500 ring-2 ring-surface" />
+              </span>
+            ) : null}
           </span>
           <span className="w-10 shrink-0 text-right text-xs font-semibold text-neutral-700 tabular-nums">
             {Math.round(progress)}%
